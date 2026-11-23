@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+compass-profile.json
+compass.json
+compass-*.tmp
+*.xlsx
+*.xlsm
+*.zip
+*.exe
+runtime/
+dist/
