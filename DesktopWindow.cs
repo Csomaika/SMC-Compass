@@ -109,7 +109,11 @@ internal sealed class DesktopWindow : Form
         sugarSearch.TextChanged += (s,e) => { if (!binding) FillPipeline(); };
         visible.CheckedChanged += (s,e) => { if (!binding) FillCustomers(); };
         if(!testing)Shown += (s,e) => Run(Initial);
-        timer.Tick += (s,e) => { if (!busy && DateTime.UtcNow >= nextRefresh) Run(() => RefreshData(false,false)); };
+        timer.Tick += (s,e) => {
+            if(busy)return;
+            if(DateTime.UtcNow>=nextRefresh)Run(() => RefreshData(false,false),true);
+            else if(HasWatchedFile())Run(() => RefreshData(false,false,true),true);
+        };
         FormClosing += (s,e) => { if (busy && e.CloseReason == CloseReason.UserClosing) { e.Cancel=true; foot.Text="Művelet folyamatban. Várd meg a befejezést."; } };
         FormClosed += (s,e) => timer.Dispose();
     }
@@ -163,13 +167,13 @@ internal sealed class DesktopWindow : Form
         timer.Start();
     }
 
-    private async void Run(Func<Task> work)
+    private async void Run(Func<Task> work,bool quiet=false)
     {
         if (busy || IsDisposed) return;
         busy = true;
         refreshBtn.Enabled = exportBtn.Enabled = updateBtn.Enabled = false;
-        UseWaitCursor = true;
-        foot.Text = "Művelet folyamatban…";
+        UseWaitCursor = !quiet;
+        if(!quiet)foot.Text = "Művelet folyamatban…";
         try
         {
             await work();
@@ -180,7 +184,7 @@ internal sealed class DesktopWindow : Form
             if (!IsDisposed)
             {
                 foot.Text = error.Message;
-                if (Visible) MessageBox.Show(this,error.Message,"SMC Compass",MessageBoxButtons.OK,MessageBoxIcon.Information);
+                if (Visible&&!quiet) MessageBox.Show(this,error.Message,"SMC Compass",MessageBoxButtons.OK,MessageBoxIcon.Information);
             }
         }
         finally
@@ -468,8 +472,10 @@ internal sealed class DesktopWindow : Form
         voidRow(list,sourcesStatus);
         var mode=Picker(); mode.Width=360;
         SetChoices(mode,new[]{new Pick("local","Helyi / OneDrive-szinkronizált fájl"),new Pick("sharepoint","Közvetlen SharePoint (Entra)"),new Pick("manual","Kézi Excel-import")},"local");
-        Setting(list,"Forrásmód","source",mode);
-        Setting(list,"Automatikus frissítés (perc)","minutes",Edit(85));
+        Setting(list,"Alapértelmezett forrásmód","source",mode);
+        WorkbookMode(list,"Sales forrásmód","salesSource");
+        WorkbookMode(list,"SpeedUp forrásmód","buyersSource");
+        Setting(list,"Online frissítés (perc)","minutes",Edit(85));
         Setting(list,"Üzleti év kezdete","fiscal",Edit(85));
         Setting(list,"Sales munkalap","salesSheet",Edit(165));
         Setting(list,"Előző éves munkalap","previousSheet",Edit(165));
@@ -512,11 +518,24 @@ internal sealed class DesktopWindow : Form
         if(key!=null)settings[key]=editor;
     }
 
+    private void WorkbookMode(TableLayoutPanel list,string label,string key)
+    {
+        var mode=Picker();mode.Width=360;
+        SetChoices(mode,new[]{new Pick("","Alapértelmezett mód"),new Pick("local","Helyi / OneDrive-szinkronizált fájl"),
+            new Pick("sharepoint","Közvetlen SharePoint (Entra)"),new Pick("manual","Kézi Excel-import")},"");
+        Setting(list,label,key,mode);
+    }
+
     private void PathSetting(TableLayoutPanel list,string label,string key)
     {
         var box=Edit(499);
         var choose=Button("Tallózás…",false);
-        choose.Click+=(s,e)=>{using(var file=OpenExcel()){if(file.ShowDialog(this)==DialogResult.OK)box.Text=file.FileName;}};
+        choose.Click+=(s,e)=>{using(var file=OpenExcel()){
+            if(file.ShowDialog(this)!=DialogResult.OK)return;
+            box.Text=file.FileName;
+            var mode=(ComboBox)settings[key=="salesPath"?"salesSource":"buyersSource"];
+            mode.SelectedIndex=1;
+        }};
         var field=Row();field.AutoSize=true;field.Controls.Add(box);field.Controls.Add(choose);
         Setting(list,label,null,field);settings[key]=box;
     }
@@ -780,7 +799,8 @@ internal sealed class DesktopWindow : Form
         sourcesStatus.Text=String.Join(Environment.NewLine,keys.Select((key,i)=>{
             var source=Source(key);DateTimeOffset when;
             string last=DateTimeOffset.TryParse(Json.Text(source,"lastGood"),out when)?"  ·  "+when.LocalDateTime.ToString("g",Hu):"";
-            return names[i]+"  ·  "+Json.Text(source,"message","Frissítésre vár")+last;
+            string mode=Json.Text(source,"mode");
+            return names[i]+"  ·  "+(mode.Length==0?"":mode+"  ·  ")+Json.Text(source,"message","Frissítésre vár")+last;
         }));
     }
 
@@ -813,18 +833,30 @@ internal sealed class DesktopWindow : Form
     {
         var data=ReadSettings();await worker.CallAsync("config",data);
         year=IntValue(Json.Get(data,"fiscal"),year);
-        await RefreshState(false);await FetchForecast();
-        nextRefresh=DateTime.UtcNow.AddMinutes(IntValue(Json.Get(Config,"minutes"),10));
-        foot.Text="A forrásbeállítások mentve.";
+        await RefreshState(false);
+        await RefreshData(true,false);
+        foot.Text="A forrásbeállítások mentve. A frissítés részletei a Források fülön láthatók.";
     }
 
-    private async Task RefreshData(bool forced,bool announce)
+    private string SourceMode(string kind)
     {
-        nextRefresh=DateTime.UtcNow.AddMinutes(IntValue(Json.Get(Config,"minutes"),10));
-        await worker.CallAsync("refresh",Json.Fields("force",forced));
-        await RefreshState(false);await FetchForecast();
-        if(announce)foot.Text=Json.Text(Config,"source")=="manual"?"Kézi Excel-import mód aktív.":
-            Json.Flag(Source("sales"),"ok")&&Json.Flag(Source("buyers"),"ok")?"Az Excel-források frissítve.":"A források állapota a Források fülön látható.";
+        string mode=Json.Text(Config,kind+"Source");
+        return mode.Length>0?mode:Json.Text(Config,"source");
+    }
+
+    private bool HasWatchedFile()
+    {
+        return (SourceMode("sales")=="local"&&Json.Text(Config,"salesPath").Length>0)||
+            (SourceMode("buyers")=="local"&&Json.Text(Config,"buyersPath").Length>0);
+    }
+
+    private async Task RefreshData(bool forced,bool announce,bool localOnly=false)
+    {
+        if(!localOnly)nextRefresh=DateTime.UtcNow.AddMinutes(IntValue(Json.Get(Config,"minutes"),10));
+        var result=await worker.CallAsync("refresh",Json.Fields("force",forced,"localOnly",localOnly));
+        if(forced||Json.Flag(result,"changed")) {await RefreshState(false);await FetchForecast();}
+        if(announce)foot.Text=String.Join("  ·  ",new[]{"sales","buyers"}.Select(kind=>
+            (kind=="sales"?"Sales: ":"SpeedUp: ")+(SourceMode(kind)=="manual"?"kézi import":Json.Flag(Source(kind),"ok")?"frissítve":"korábbi adatok")));
     }
 
     private static OpenFileDialog OpenExcel()

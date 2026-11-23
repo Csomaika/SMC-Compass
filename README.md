@@ -23,7 +23,7 @@ A **Programfrissítés** gomb ellenőrzi a `Csomaika/SMC-Compass` legfrissebb ny
 
 ## Automatikus forrásfrissítés
 
-**OneDrive.** Szinkronizáld az érintett SharePoint-dokumentumtárat a céges OneDrive-klienssel. A Források oldalon válaszd a helyi módot, add meg a két fájl teljes szinkronizált útvonalát, majd kattints az **Adatfrissítés** gombra. Ha az importált fájlokat te szeretnéd cserélni, válaszd a **Kézi Excel-import** módot. A Letöltések mappából felismert példány az adott letöltés állapotát tükrözi.
+**OneDrive.** A Windows OneDrive-kliensben jelentkezz be a céges fiókba. Amikor az érintett Excel-fájl már megjelenik a Fájlkezelőben a céges OneDrive mappájában, válaszd ki a **Források** fülön a megfelelő **Tallózás…** gombbal, majd mentsd a beállításokat. A Sales és a SpeedUp forrásmódja külön állítható. A Compass futás közben 15 másodpercenként ellenőrzi a figyelt helyi fájlokat, és a OneDrive által átvett új mentést automatikusan importálja. A SharePoint munkafüzetet ez a művelet olvassa. A böngészőből letöltött XLSX kézi pillanatkép.
 
 **Közvetlen SharePoint.** A SharePoint-linkeknek `sourcedoc` azonosítót kell tartalmazniuk, és azonos tenantban kell lenniük. Az IT által jóváhagyott Entra alkalmazásregisztrációhoz engedélyezett nyilvános kliens, eszközkódos bejelentkezés és a **SharePoint** API `AllSites.Read` delegált engedélye szükséges. A Források fülön válts közvetlen módra, add meg a tenant- és client-ID-t, majd a Compassban megjelenő kóddal jelentkezz be a Microsoft oldalán. A hozzáférési adatok a futó folyamat memóriájában maradnak. Újraindításkor ismét be kell jelentkezni. A lekérés a program futása alatt történik.
 

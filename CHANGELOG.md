@@ -1,5 +1,11 @@
 # SMC Compass · verziónapló
 
+## 1.2.1 · Automatikus Excel-frissítés
+
+- A Sales és a SpeedUp külön választhat OneDrive-szinkronizált, közvetlen SharePoint- vagy kézi forrást.
+- A helyi és szinkronizált Excel-fájlokat a Compass 15 másodpercenként ellenőrzi. Az új mentésből automatikusan újraszámolja az adatokat.
+- A Források fül külön jelzi, ha a SharePoint-belépéshez az azonosítók hiányoznak, valamint az utolsó sikeres import idejét.
+
 ## 1.2.0 · Telepítő és új műszerfal
 
 - Windows Installer MSI, Start menüvel és a Windows Telepített alkalmazások listájából indítható eltávolítással.

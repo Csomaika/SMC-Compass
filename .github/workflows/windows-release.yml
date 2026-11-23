@@ -28,6 +28,8 @@ jobs:
       - name: Build Windows package
         shell: pwsh
         run: |
+          python -m unittest -v test_refresh
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python build_windows.py --output dist/SMC-Compass-Windows.zip
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet tool install --tool-path dist/wix wix --version 5.0.2

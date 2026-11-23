@@ -28,9 +28,15 @@ def configure(fields):
             raise ValueError('Üzleti év 2000–2200, frissítési idő 1–180 perc.')
         if cfg['source'] not in ('manual','local','sharepoint'):
             raise ValueError('Érvénytelen adatforrásmód.')
-        if any(cfg[k] != current[k] for k in ('tenant','client','salesUrl','buyersUrl')):
+        if any(cfg[k] not in ('','manual','local','sharepoint') for k in ('salesSource','buyersSource')):
+            raise ValueError('Érvénytelen munkafüzet-forrásmód.')
+        if any(cfg[k] != current[k] for k in ('tenant','client','salesUrl','buyersUrl','source','salesSource','buyersSource')):
             core.SESSION['sp'] = {}
             DEVICE.clear()
+        for kind in ('sales','buyers'):
+            if (core.source_mode(kind,current)!=core.source_mode(kind,cfg) or cfg[kind+'Path']!=current[kind+'Path']):
+                core.LOCAL_CHECKS.pop(kind,None)
+                core.CHECKS.pop(kind,None)
         if any(cfg[k] != current[k] for k in ('sugarUrl','sugarApi')):
             core.SESSION['sugar'] = ''
         core.STATE['config'] = cfg
@@ -90,6 +96,7 @@ def import_workbook(data):
     if len(content)>core.LIMIT:
         raise ValueError('A forrásfájl meghaladja a 35 MB-ot.')
     core.ingest(kind,content,core.STATE['config'].copy(),'Kézi Excel-import',True)
+    core.LOCAL_CHECKS.pop(kind,None)
     core.save()
 
 
@@ -154,7 +161,7 @@ def dispatch(action, data):
     if action=='forecast':
         return core.scenario(*core.forecast_args(data))
     if action=='refresh':
-        return {'ok':core.refresh(force=bool(data.get('force')))}
+        return {'ok':True, 'changed':core.refresh(force=bool(data.get('force')),local_only=bool(data.get('localOnly')))}
     if action=='config':
         configure(data)
     elif action=='manual':

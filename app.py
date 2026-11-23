@@ -21,7 +21,7 @@ SALES_KEY = 'ofsoldelectricactuators'
 MONTHS = 'Ápr Máj Jún Júl Aug Szept Okt Nov Dec Jan Feb Márc'.split()
 DEFAULT = dict(salesUrl='', buyersUrl='', salesPath='', buyersPath='', salesSheet='REPORT26', previousSheet='REPORT25',
                buyersSheet='Munka1', fiscal=2026, minutes=10, source='local', tenant='', client='',
-               sugarUrl='', sugarApi='v11', sugarMine=True)
+               salesSource='', buyersSource='', sugarUrl='', sugarApi='v11', sugarMine=True)
 PROFILE_FILE = HERE/'compass-profile.json'
 PROFILE = json.loads(PROFILE_FILE.read_text(encoding='utf-8-sig')) if PROFILE_FILE.is_file() else {}
 DEFAULT.update({key:value for key,value in PROFILE.items() if key in DEFAULT and type(value) is type(DEFAULT[key])})
@@ -31,6 +31,7 @@ WRITE = RLock()
 SYNC = Lock()
 SESSION = {'sp': {}, 'sugar': ''}
 CHECKS = {}
+LOCAL_CHECKS = {}
 STATE = {'config': DEFAULT.copy(), 'series': {}, 'salesSheets': [], 'buyers': {}, 'manual': {}, 'scores': {},
          'opportunities': [], 'status': {}}
 
@@ -107,9 +108,13 @@ def microsoft_details(config):
     uuid = r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}'
     if not re.fullmatch(uuid, tenant, re.I) or not re.fullmatch(uuid, client, re.I):
         raise ValueError('Az Entra Directory (tenant) ID és Application (client) ID mezőbe GUID szükséges.')
-    host = sharepoint_resource(config['salesUrl'])[0]
-    if sharepoint_resource(config['buyersUrl'])[0] != host:
+    hosts = {sharepoint_resource(config[kind+'Url'])[0] for kind in ('sales','buyers')
+             if source_mode(kind, config)=='sharepoint'}
+    if not hosts:
+        raise ValueError('A Források fülön legalább egy forrást állíts közvetlen SharePointra.')
+    if len(hosts)>1:
         raise ValueError('A két SharePoint-forrásnak azonos SharePoint-bérlőben kell lennie.')
+    host = hosts.pop()
     return 'https://login.microsoftonline.com/'+tenant+'/oauth2/v2.0/', client, host+'/AllSites.Read offline_access'
 
 
@@ -123,6 +128,8 @@ def sp_token(config):
     if current and current['expires'] > time.monotonic():
         return current['access']
     if not current.get('refresh'):
+        if not config['tenant'] or not config['client']:
+            raise ValueError('Hiányzik az Entra tenant vagy client ID. Add meg az azonosítókat, vagy állíts be szinkronizált OneDrive-fájlt.')
         raise ValueError('A SharePoint közvetlen olvasásához jelentkezz be a Források oldalon.')
     endpoint, client, scope = microsoft_details(config)
     token = json.loads(http(endpoint+'token', dict(grant_type='refresh_token', client_id=client,
@@ -131,21 +138,32 @@ def sp_token(config):
     return token['access_token']
 
 
-def read_source(kind, config):
-    if config['source']=='sharepoint':
-        endpoint = sharepoint_resource(config[kind+'Url'])[1]
-        data = http(endpoint, headers={'Authorization':'Bearer '+sp_token(config),'Accept':'application/octet-stream'})
-        return data, 'SharePoint'
+def source_mode(kind, config):
+    return config.get(kind+'Source') or config['source']
+
+
+def local_source(kind, config):
     file = config[kind+'Path']
     fallback = PROFILE.get(kind+'Snapshot','')
     if not (file or fallback):
-        raise ValueError('Add meg a forrásfájl útvonalát vagy válassz SharePoint-kapcsolatot.')
+        raise ValueError('Válaszd ki a helyi vagy a OneDrive-val szinkronizált Excel-fájlt a Fájlkezelőből.')
     path = Path(file) if file else Path.home()/'Downloads'/Path(fallback).name
-    if not path.is_file() or path.suffix.lower() not in ('.xlsx','.xlsm'):
-        raise ValueError('Add meg az Excel-fájl helyi útvonalát, vagy tölts be egy munkafüzetet.')
-    if path.stat().st_size > LIMIT:
+    if path.suffix.lower() not in ('.xlsx','.xlsm'):
+        raise ValueError('XLSX- vagy XLSM-munkafüzet szükséges.')
+    return path, 'Figyelt Excel-fájl' if file else 'Letöltések · pillanatkép'
+
+
+def read_source(kind, config):
+    if source_mode(kind, config)=='sharepoint':
+        endpoint = sharepoint_resource(config[kind+'Url'])[1]
+        data = http(endpoint, headers={'Authorization':'Bearer '+sp_token(config),'Accept':'application/octet-stream'})
+        return data, 'SharePoint'
+    path, label = local_source(kind, config)
+    with path.open('rb') as file:
+        data = file.read(LIMIT+1)
+    if len(data)>LIMIT:
         raise ValueError('A forrásfájl meghaladja a 35 MB méretkorlátot.')
-    return path.read_bytes(), 'Figyelt helyi fájl' if file else 'Letöltések · pillanatkép'
+    return data, label
 
 
 def ingest(kind, data, config, mode, force=False):
@@ -154,7 +172,7 @@ def ingest(kind, data, config, mode, force=False):
     signature = (hashlib.sha256(data).digest(), mode, config['salesSheet'], config['previousSheet'],
                  config['buyersSheet'], config['fiscal'])
     if not force and CHECKS.get(kind)==signature:
-        return
+        return False
     try:
         if kind=='sales':
             entries, names = sales(io.BytesIO(data), config['salesSheet'], config['fiscal'], config['previousSheet'])
@@ -170,6 +188,7 @@ def ingest(kind, data, config, mode, force=False):
     except (zipfile.BadZipFile, KeyError, IndexError) as error:
         raise ValueError('Sérült vagy nem támogatott XLSX-szerkezet.') from error
     CHECKS[kind]=signature
+    return True
 
 
 def sugar_import(config):
@@ -202,30 +221,49 @@ def sugar_import(config):
         save()
 
 
-def refresh(force=False):
+def refresh(force=False, local_only=False):
     if not SYNC.acquire(blocking=False):
         return False
     try:
         with WRITE:
             config = STATE['config'].copy()
+        before = STATE['status'].copy()
+        imported = False
         for kind in ('sales','buyers'):
-            if config['source']=='manual':
+            mode = source_mode(kind, config)
+            if mode=='manual' or (local_only and (mode!='local' or not config[kind+'Path'])):
                 continue
             try:
+                signature = None
+                if mode=='local':
+                    path, _ = local_source(kind, config)
+                    stamp = path.stat()
+                    signature = (str(path), stamp.st_mtime_ns, stamp.st_ctime_ns, stamp.st_size,
+                                 config['salesSheet'], config['previousSheet'], config['buyersSheet'], config['fiscal'])
+                    if not force and LOCAL_CHECKS.get(kind)==signature and STATE['status'].get(kind,{}).get('ok'):
+                        continue
                 data, mode = read_source(kind, config)
-                ingest(kind, data, config, mode, force or not STATE['status'].get(kind,{}).get('ok'))
+                imported |= ingest(kind, data, config, mode, force or not STATE['status'].get(kind,{}).get('ok'))
+                if signature is not None:
+                    LOCAL_CHECKS[kind]=signature
             except Exception as error:
                 with WRITE:
-                    status(kind, str(error), mode='SharePoint' if config['source']=='sharepoint' else 'Helyi forrás')
-        if SESSION['sugar']:
+                    if isinstance(error, FileNotFoundError):
+                        error = 'A beállított Excel-fájl még nem érhető el a Fájlkezelőben.'
+                    previous = STATE['status'].get(kind,{})
+                    if force or previous.get('ok') or previous.get('message')!=str(error):
+                        status(kind, str(error), mode='SharePoint' if source_mode(kind,config)=='sharepoint' else 'Helyi forrás')
+        if not local_only and SESSION['sugar']:
             try:
                 sugar_import(config)
             except Exception as error:
                 with WRITE:
                     status('sugar',str(error),mode='Sugar REST')
-        with WRITE:
-            save()
-        return True
+        changed = imported or before!=STATE['status']
+        if changed:
+            with WRITE:
+                save()
+        return changed
     finally:
         SYNC.release()
 
