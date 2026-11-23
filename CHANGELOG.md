@@ -1,5 +1,9 @@
 # SMC Compass · verziónapló
 
+## 1.2.3 · Programfrissítés a Compassból
+
+- A **Programfrissítés** jóváhagyás után letölti és ellenőrzi az új MSI-t, bezárja a Compasst, majd elindítja a Windows Installer telepítését.
+
 ## 1.2.2 · Sales-frissítés böngészőből
 
 - A **Sales frissítése böngészőből** gomb a beállított SharePoint-munkafüzet letöltését indítja az alapértelmezett böngészőben.

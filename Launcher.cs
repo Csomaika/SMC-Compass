@@ -37,6 +37,13 @@ internal static class Launcher
         Process.Start(new ProcessStartInfo(exe) { WorkingDirectory = Path.GetDirectoryName(exe), UseShellExecute = true });
     }
 
+    private static void StartInstaller(string installer)
+    {
+        var start = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory,"msiexec.exe"),
+            "/i \""+installer+"\" /qb+ /norestart") { UseShellExecute = true, Verb = "runas" };
+        using (var process = Process.Start(start)) { }
+    }
+
     internal static void OpenWeb(string url)
     {
         Uri uri;
@@ -83,6 +90,7 @@ internal static class Launcher
             if (!smoke && ForwardToInstalledVersion()) return 0;
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            string installer = null;
             using (var mutex = new Mutex(false, InstanceKey()))
             {
                 bool locked;
@@ -101,11 +109,16 @@ internal static class Launcher
                             using (var window = new DesktopWindow(worker,true)) window.RunLayoutTest(state, forecast);
                             return 0;
                         }
-                        Application.Run(new DesktopWindow(worker));
+                        using (var window = new DesktopWindow(worker))
+                        {
+                            Application.Run(window);
+                            installer = window.PendingInstaller;
+                        }
                     }
                 }
                 finally { mutex.ReleaseMutex(); }
             }
+            if (installer != null) StartInstaller(installer);
             return 0;
         }
         catch (Exception error)

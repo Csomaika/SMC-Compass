@@ -28,7 +28,7 @@ jobs:
       - name: Build Windows package
         shell: pwsh
         run: |
-          python -m unittest -v test_refresh
+          python -m unittest -v test_refresh test_updates
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python build_windows.py --output dist/SMC-Compass-Windows.zip
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -44,16 +44,26 @@ jobs:
           $env:COMPASS_DATA = Join-Path $env:RUNNER_TEMP 'compass-smoke'
           $check = Start-Process -FilePath $exe -ArgumentList '--self-test' -WindowStyle Hidden -Wait -PassThru
           if ($check.ExitCode -ne 0) { throw "Compass smoke test failed: $($check.ExitCode)" }
-      - name: Verify install and uninstall
+      - name: Verify upgrade and uninstall
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          $previous = Join-Path $env:RUNNER_TEMP 'compass-previous.msi'
+          gh release download v1.2.2 --repo $env:GITHUB_REPOSITORY --pattern SMC-Compass-Setup.msi --output $previous
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $setup = (Resolve-Path -LiteralPath dist/SMC-Compass-Setup.msi).Path
-          $log = Join-Path $env:RUNNER_TEMP 'compass-install.log'
-          $install = Start-Process -FilePath msiexec.exe -ArgumentList @('/i', ('"{0}"' -f $setup), '/qn', '/norestart', '/l*v', ('"{0}"' -f $log)) -WindowStyle Hidden -Wait -PassThru
-          if ($install.ExitCode -ne 0) { Get-Content $log -Tail 70; throw "Setup failed: $($install.ExitCode)" }
+          $root = Join-Path $env:ProgramFiles 'SMC Compass'
+          foreach ($package in @($previous, $setup)) {
+            $log = Join-Path $env:RUNNER_TEMP 'compass-install.log'
+            $install = Start-Process -FilePath msiexec.exe -ArgumentList @('/i', ('"{0}"' -f $package), '/passive', '/norestart', '/l*v', ('"{0}"' -f $log)) -WindowStyle Hidden -Wait -PassThru
+            if ($install.ExitCode -ne 0) { Get-Content $log -Tail 70; throw "Setup failed: $($install.ExitCode)" }
+            if ($package -eq $previous -and (Get-Content -LiteralPath (Join-Path $root 'version.txt')).Trim() -ne '1.2.2') {
+              throw 'The baseline version was not installed'
+            }
+          }
           $reg = Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where-Object DisplayName -eq 'SMC Compass'
           $version = (Get-Content -Raw version.txt).Trim()
-          $root = Join-Path $env:ProgramFiles 'SMC Compass'
           $exe = Join-Path $root 'SMC-Compass.exe'
           $shortcut = Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'SMC Compass.lnk'
           if ($reg.DisplayVersion -ne $version -or !(Test-Path -LiteralPath $shortcut)) { throw 'Install registration missing' }

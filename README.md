@@ -10,7 +10,7 @@ Natív, 64 bites Windows-alkalmazás PSD sales munkához. Havi forecast, kézi t
 
 ## Programfrissítés és verziónapló
 
-A **Programfrissítés** gomb ellenőrzi a `Csomaika/SMC-Compass` legfrissebb nyilvános GitHub-kiadását. Az MSI-vel telepített alkalmazás megmutatja az új kiadást és megnyithatja az MSI-kiadás oldalát. A hordozható változat frissítésnél ellenőrzi a ZIP SHA-256 lenyomatát és külön verziómappát használ. A helyi beállítások és adatok a felhasználói adatmappában maradnak. A **Verziónapló** fülön a telepített verzió és a kiadástörténet olvasható.
+A **Programfrissítés** gomb ellenőrzi a `Csomaika/SMC-Compass` legfrissebb nyilvános GitHub-kiadását. Az MSI-vel telepített alkalmazás jóváhagyás után letölti a kiadás telepítőjét és ellenőrzi az SHA-256 lenyomatát. A Compass bezárul, majd elindítja a Windows Installert. Ha a Windows jóváhagyást kér, fogadd el, és a telepítés után nyisd meg újra a Compasst a Start menüből. A hordozható változat frissítésnél ellenőrzi a ZIP SHA-256 lenyomatát és külön verziómappát használ. A helyi beállítások és adatok a felhasználói adatmappában maradnak. A **Verziónapló** fülön a telepített verzió és a kiadástörténet olvasható.
 
 ## Sales és SpeedUp
 

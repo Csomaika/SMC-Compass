@@ -17,6 +17,7 @@ internal sealed class DesktopWindow : Form
     private static readonly CultureInfo Hu = CultureInfo.GetCultureInfo("hu-HU");
     internal static readonly string[] Months = {"Ápr","Máj","Jún","Júl","Aug","Szept","Okt","Nov","Dec","Jan","Feb","Márc"};
     private readonly Worker worker;
+    internal string PendingInstaller { get; private set; }
     private readonly Timer timer = new Timer { Interval = 15000 };
     private DateTime nextRefresh;
     private Dictionary<string,object> state = Json.Fields();
@@ -1007,18 +1008,21 @@ internal sealed class DesktopWindow : Form
         string version=Json.Text(check,"latest");
         string notes=Json.Text(check,"notes");
         if(notes.Length>520)notes=notes.Substring(0,520)+"…";
-        if(Launcher.ManagedInstall)
-        {
-            if(MessageBox.Show(this,"Elérhető a(z) "+version+" verzió.\r\n\r\n"+notes+"\r\n\r\nMegnyitod a Windows MSI-kiadás oldalát?",
-                "Programfrissítés",MessageBoxButtons.YesNo,MessageBoxIcon.Information)==DialogResult.Yes)
-                Launcher.OpenWeb("https://github.com/Csomaika/SMC-Compass/releases/tag/v"+version);
-            return;
-        }
-        if(MessageBox.Show(this,"Elérhető a(z) "+version+" verzió.\r\n\r\n"+notes+"\r\n\r\nLetöltöd és újraindítod az alkalmazást?",
+        string prompt=Launcher.ManagedInstall
+            ?"Letöltöd és telepíted a frissítést? A Compass bezárul. A telepítés végén a Start menüből indíthatod újra."
+            :"Letöltöd és újraindítod az alkalmazást?";
+        if(MessageBox.Show(this,"Elérhető a(z) "+version+" verzió.\r\n\r\n"+notes+"\r\n\r\n"+prompt,
             "Programfrissítés",MessageBoxButtons.YesNo,MessageBoxIcon.Information)!=DialogResult.Yes)return;
         foot.Text="Programfrissítés letöltése és ellenőrzése…";
         var result=await worker.CallAsync("update-install",Json.Fields("version",version));
-        Launcher.StartProgram(Json.Text(result,"exe"));
+        if(Launcher.ManagedInstall)
+        {
+            string installer=Json.Text(result,"msi");
+            if(!File.Exists(installer))
+                throw new InvalidOperationException("A letöltött Windows-telepítő nem található.");
+            PendingInstaller=installer;
+        }
+        else Launcher.StartProgram(Json.Text(result,"exe"));
         busy=false;Close();
     }
 }

@@ -15,7 +15,8 @@ from zipfile import ZipFile
 import app as core
 
 REPO = 'Csomaika/SMC-Compass'
-ASSET = 'SMC-Compass-Windows.zip'
+ZIP_ASSET = 'SMC-Compass-Windows.zip'
+MSI_ASSET = 'SMC-Compass-Setup.msi'
 MAX_DOWNLOAD = 45 * 1024 * 1024
 VERSION_PATTERN = r'[0-9]{1,5}\.[0-9]{1,5}\.[0-9]{1,5}'
 HOSTS = {'api.github.com','github.com','release-assets.githubusercontent.com','objects.githubusercontent.com'}
@@ -60,6 +61,10 @@ def download(url, limit, metadata=False):
     return data
 
 
+def asset_name():
+    return MSI_ASSET if (core.HERE.parent/'msi-install.txt').is_file() else ZIP_ASSET
+
+
 def release():
     try:
         data = download(f'https://api.github.com/repos/{REPO}/releases/latest',1_000_000,True)
@@ -69,7 +74,7 @@ def release():
         raise ValueError(f'A GitHub nem érhető el ({exc.code}).') from None
     item = json.loads(data)
     published = version(item['tag_name'])
-    asset = next((x for x in item.get('assets',[]) if x.get('name')==ASSET),None)
+    asset = next((x for x in item.get('assets',[]) if x.get('name')==asset_name()),None)
     return {'version':published,'notes':str(item.get('body') or '')[:16000], 'asset':asset}
 
 
@@ -107,9 +112,8 @@ def extract(content, stage, expected):
 
 
 def install(expected):
-    if (core.HERE.parent/'msi-install.txt').is_file():
-        raise ValueError('A telepített Compass frissítéséhez a Windows MSI-kiadást használd.')
     expected = version(expected)
+    package_name = asset_name()
     entry = release()
     if not entry or entry['version']!=expected or tuple(map(int,expected.split('.')))<=tuple(map(int,current().split('.'))):
         raise ValueError('A kiadás közben megváltozott. Ellenőrizd újra a frissítést.')
@@ -117,12 +121,22 @@ def install(expected):
     digest = asset.get('digest') or ''
     if not re.fullmatch(r'sha256:[0-9a-f]{64}',digest):
         raise ValueError('A kiadásban nincs ellenőrizhető SHA-256 lenyomat.')
-    expected_url = f'https://github.com/{REPO}/releases/download/v{expected}/{ASSET}'
+    expected_url = f'https://github.com/{REPO}/releases/download/v{expected}/{package_name}'
     if asset.get('browser_download_url')!=expected_url:
         raise ValueError('A kiadásban nem található a várt Windows-csomag.')
     content = download(expected_url,MAX_DOWNLOAD)
     if hashlib.sha256(content).hexdigest()!=digest[7:]:
         raise ValueError('A letöltött csomag lenyomata eltér a GitHub-kiadásétól.')
+    if package_name == MSI_ASSET:
+        folder = core.HOME/'updates'
+        folder.mkdir(parents=True,exist_ok=True)
+        installer = folder/MSI_ASSET
+        with tempfile.TemporaryDirectory(prefix='compass-msi-',dir=folder) as temp:
+            pending = Path(temp)/MSI_ASSET
+            pending.write_bytes(content)
+            os.replace(pending,installer)
+        return {'version':expected,'msi':str(installer)}
+
     versions = core.HOME/'versions'
     versions.mkdir(parents=True,exist_ok=True)
     final = versions/expected
