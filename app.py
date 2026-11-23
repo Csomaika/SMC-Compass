@@ -21,7 +21,8 @@ SALES_KEY = 'ofsoldelectricactuators'
 MONTHS = 'Ápr Máj Jún Júl Aug Szept Okt Nov Dec Jan Feb Márc'.split()
 DEFAULT = dict(salesUrl='', buyersUrl='', salesPath='', buyersPath='', salesSheet='REPORT26', previousSheet='REPORT25',
                buyersSheet='Munka1', fiscal=2026, minutes=10, source='local', tenant='', client='',
-               salesSource='', buyersSource='', sugarUrl='', sugarApi='v11', sugarMine=True)
+               salesSource='', buyersSource='', salesDownloadName='', salesDownloadFolder='',
+               sugarUrl='', sugarApi='v11', sugarMine=True)
 PROFILE_FILE = HERE/'compass-profile.json'
 PROFILE = json.loads(PROFILE_FILE.read_text(encoding='utf-8-sig')) if PROFILE_FILE.is_file() else {}
 DEFAULT.update({key:value for key,value in PROFILE.items() if key in DEFAULT and type(value) is type(DEFAULT[key])})
@@ -91,7 +92,7 @@ def http(url, fields=None, headers=None, form=False):
     return content
 
 
-def sharepoint_resource(url):
+def sharepoint_file(url):
     parsed = urlsplit(url)
     if parsed.scheme != 'https' or not re.fullmatch(r'[a-z0-9-]+\.sharepoint\.com', parsed.netloc, re.I):
         raise ValueError('Érvényes HTTPS SharePoint Online URL szükséges.')
@@ -99,8 +100,17 @@ def sharepoint_resource(url):
     guid = next((values[0].strip('{}') for key, values in parse_qs(parsed.query).items() if key.lower()=='sourcedoc'), '')
     if not site or not re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', guid, re.I):
         raise ValueError('SharePoint munkafüzetlink szükséges (sourcedoc azonosítóval).')
-    origin = f'https://{parsed.netloc.lower()}'
-    return origin, origin+site.group()+f"/_api/web/GetFileById(guid'{guid}')/$value"
+    return f'https://{parsed.netloc.lower()}', site.group(), guid
+
+
+def sharepoint_resource(url):
+    origin, site, guid = sharepoint_file(url)
+    return origin, origin+site+f"/_api/web/GetFileById(guid'{guid}')/$value"
+
+
+def sharepoint_browser_download(url):
+    origin, site, guid = sharepoint_file(url)
+    return origin+site+'/_layouts/15/download.aspx?'+urlencode({'UniqueId':guid})
 
 
 def microsoft_details(config):
@@ -231,7 +241,7 @@ def refresh(force=False, local_only=False):
         imported = False
         for kind in ('sales','buyers'):
             mode = source_mode(kind, config)
-            if mode=='manual' or (local_only and (mode!='local' or not config[kind+'Path'])):
+            if mode in ('manual','browser') or (local_only and (mode!='local' or not config[kind+'Path'])):
                 continue
             try:
                 signature = None

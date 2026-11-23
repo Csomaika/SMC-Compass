@@ -46,6 +46,40 @@ class WorkbookRefreshTest(unittest.TestCase):
                 self.assertNotIn('buyers',state['status'])
                 http.assert_not_called()
 
+    def test_browser_sales_imports_only_the_new_download(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            path = home / 'Sales.xlsx'
+            guid = '12345678-1234-1234-1234-123456789abc'
+            site = 'https://contoso.sharepoint.com/sites/Sales/_layouts/15/'
+            cfg = app.DEFAULT | dict(salesUrl=site+'Doc2.aspx?sourcedoc=%7B'+guid+'%7D',
+                                     salesSource='local', salesPath=str(path), buyersSource='manual')
+            state = {'config': cfg, 'status': {}, 'series': {}, 'salesSheets': [], 'buyers': {}, 'manual': {}}
+            with patch.multiple(app, HOME=home, FILE=home/'compass.json', STATE=state,
+                                CHECKS={}, LOCAL_CHECKS={}), patch.object(app,'http') as http, \
+                 patch.object(desktop, 'BROWSER_SALES', {}):
+                path.write_bytes(self.workbook(1400))
+                app.refresh(local_only=True)
+                start = desktop.dispatch('browser-sales-start', {'downloads': str(home)})
+                self.assertEqual(start['url'], site+'download.aspx?UniqueId='+guid)
+                (home / 'Other.xlsx').write_bytes(self.workbook(1600))
+                partial = home / 'Sales (1).xlsx.crdownload'
+                partial.write_bytes(self.workbook(1500))
+                for _ in range(2):
+                    self.assertEqual(desktop.dispatch('browser-sales-poll', {})['result'], 'waiting')
+                self.assertEqual(app.scenario(2026, app.SALES_KEY)['actual'][7], 1400)
+                partial.rename(home / 'Sales (1).xlsx')
+                self.assertEqual(desktop.dispatch('browser-sales-poll', {})['result'], 'waiting')
+                self.assertEqual(desktop.dispatch('browser-sales-poll', {}),
+                                 {'result': 'imported', 'name': 'Sales (1).xlsx'})
+                self.assertEqual(app.scenario(2026, app.SALES_KEY)['actual'][7], 1500)
+                self.assertEqual(state['config']['salesSource'], 'browser')
+                self.assertEqual(state['config']['salesDownloadName'], 'Sales.xlsx')
+                self.assertEqual(state['config']['buyersSource'], 'manual')
+                self.assertFalse(app.refresh(force=True))
+                self.assertEqual(app.scenario(2026, app.SALES_KEY)['actual'][7], 1500)
+                http.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

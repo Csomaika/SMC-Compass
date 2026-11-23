@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -42,6 +43,21 @@ internal static class Launcher
         if (!Uri.TryCreate(url, UriKind.Absolute, out uri) || uri.Scheme != Uri.UriSchemeHttps)
             throw new InvalidOperationException("Érvényes HTTPS cím szükséges.");
         Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+    }
+
+    [DllImport("shell32.dll")]
+    private static extern int SHGetKnownFolderPath(ref Guid id, uint flags, IntPtr token, out IntPtr path);
+
+    internal static string DownloadsFolder()
+    {
+        var id=new Guid("374DE290-123F-4565-9164-39C4925E467B");
+        IntPtr path;
+        if(SHGetKnownFolderPath(ref id,0,IntPtr.Zero,out path)==0)
+        {
+            try{return Marshal.PtrToStringUni(path);}
+            finally{Marshal.FreeCoTaskMem(path);}
+        }
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),"Downloads");
     }
 
     private static bool ForwardToInstalledVersion()

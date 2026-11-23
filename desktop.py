@@ -13,6 +13,7 @@ import app as core
 import updates
 
 DEVICE = {}
+BROWSER_SALES = {}
 
 
 def configure(fields):
@@ -28,7 +29,7 @@ def configure(fields):
             raise ValueError('Üzleti év 2000–2200, frissítési idő 1–180 perc.')
         if cfg['source'] not in ('manual','local','sharepoint'):
             raise ValueError('Érvénytelen adatforrásmód.')
-        if any(cfg[k] not in ('','manual','local','sharepoint') for k in ('salesSource','buyersSource')):
+        if cfg['salesSource'] not in ('','manual','local','sharepoint','browser') or cfg['buyersSource'] not in ('','manual','local','sharepoint'):
             raise ValueError('Érvénytelen munkafüzet-forrásmód.')
         if any(cfg[k] != current[k] for k in ('tenant','client','salesUrl','buyersUrl','source','salesSource','buyersSource')):
             core.SESSION['sp'] = {}
@@ -86,7 +87,7 @@ def write_export(data):
     path.write_bytes(core.export(data))
 
 
-def import_workbook(data):
+def import_workbook(data, mode='Kézi Excel-import', after_import=None):
     path = Path(data['path'])
     kind = data['kind']
     if kind not in ('sales','buyers') or path.suffix.lower() not in ('.xlsx','.xlsm'):
@@ -95,9 +96,77 @@ def import_workbook(data):
         content = file.read(core.LIMIT+1)
     if len(content)>core.LIMIT:
         raise ValueError('A forrásfájl meghaladja a 35 MB-ot.')
-    core.ingest(kind,content,core.STATE['config'].copy(),'Kézi Excel-import',True)
-    core.LOCAL_CHECKS.pop(kind,None)
-    core.save()
+    with core.WRITE:
+        core.ingest(kind,content,core.STATE['config'].copy(),mode,True)
+        core.LOCAL_CHECKS.pop(kind,None)
+        if after_import:
+            after_import(core.STATE['config'])
+        core.save()
+
+
+def download_candidates(folder, matcher):
+    candidates = {}
+    for path in folder.iterdir():
+        if not matcher.fullmatch(path.name):
+            continue
+        try:
+            stamp = path.stat()
+            if path.is_file():
+                candidates[path] = (stamp.st_mtime_ns,stamp.st_ctime_ns,stamp.st_size)
+        except FileNotFoundError:
+            continue
+    return candidates
+
+
+def start_browser_sales(data):
+    BROWSER_SALES.clear()
+    config = core.STATE['config']
+    url = core.sharepoint_browser_download(config['salesUrl'])
+    filename = (data.get('filename') or config['salesDownloadName'] or core.PROFILE.get('salesSnapshot') or
+                re.sub(r' \(\d+\)(?=\.xls[xm]$)', '', Path(config['salesPath']).name, flags=re.IGNORECASE)).strip()
+    if not filename:
+        return {'needsName':True}
+    suffix = Path(filename).suffix
+    if not re.fullmatch(r'[^/\\:*?"<>|\x00-\x1f]+',filename) or suffix.lower() not in ('.xlsx','.xlsm'):
+        raise ValueError('A SharePoint-fájl nevét add meg, .xlsx vagy .xlsm kiterjesztéssel.')
+    stem = Path(filename).stem
+    matcher = re.compile(re.escape(stem)+r'(?: \(\d+\))?'+re.escape(suffix),re.IGNORECASE)
+    folder = Path(config['salesDownloadFolder'] or data['downloads'])
+    if not folder.is_absolute() or not folder.is_dir():
+        raise ValueError('A böngésződ tényleges letöltési mappáját add meg a Források fülön.')
+    BROWSER_SALES.update(folder=folder,matcher=matcher,before=download_candidates(folder,matcher),
+                         candidate=None,expires=time.monotonic()+120,filename=filename)
+    return {'url':url}
+
+
+def poll_browser_sales():
+    job = BROWSER_SALES
+    if not job or time.monotonic()>=job['expires']:
+        job.clear()
+        return {'result':'timeout'}
+    changed = [(p,s) for p,s in download_candidates(job['folder'],job['matcher']).items()
+               if job['before'].get(p)!=s and s[2]>0]
+    candidate = max(changed,key=lambda item:(max(item[1][:2]),item[0].name),default=None)
+    if candidate is None or candidate!=job['candidate']:
+        job['candidate'] = candidate
+        return {'result':'waiting'}
+    path,_ = candidate
+
+    def confirm(config):
+        config['salesDownloadName'] = job['filename']
+        # Keep future background checks from importing an older Downloads copy.
+        config['salesSource'] = 'browser'
+
+    try:
+        import_workbook({'kind':'sales','path':str(path)},'SharePoint · böngészős letöltés',confirm)
+    except (PermissionError,FileNotFoundError):
+        job['candidate'] = None
+        return {'result':'waiting'}
+    except Exception:
+        job.clear()
+        raise
+    job.clear()
+    return {'result':'imported','name':path.name}
 
 
 def sugar(data):
@@ -162,6 +231,10 @@ def dispatch(action, data):
         return core.scenario(*core.forecast_args(data))
     if action=='refresh':
         return {'ok':True, 'changed':core.refresh(force=bool(data.get('force')),local_only=bool(data.get('localOnly')))}
+    if action=='browser-sales-start':
+        return start_browser_sales(data)
+    if action=='browser-sales-poll':
+        return poll_browser_sales()
     if action=='config':
         configure(data)
     elif action=='manual':
@@ -180,6 +253,8 @@ def dispatch(action, data):
         return poll_signin()
     elif action=='signin-cancel':
         DEVICE.clear()
+    elif action=='browser-sales-cancel':
+        BROWSER_SALES.clear()
     elif action=='update-check':
         return updates.check()
     elif action=='update-install':

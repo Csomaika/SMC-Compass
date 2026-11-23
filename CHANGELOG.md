@@ -1,5 +1,10 @@
 # SMC Compass · verziónapló
 
+## 1.2.2 · Sales-frissítés böngészőből
+
+- A **Sales frissítése böngészőből** gomb a beállított SharePoint-munkafüzet letöltését indítja az alapértelmezett böngészőben.
+- A Compass felismeri a gombnyomás után érkező Excel-fájlt, beolvassa a Sales-adatokat és újraszámolja a forecastot. A letöltési mappa állítható.
+
 ## 1.2.1 · Automatikus Excel-frissítés
 
 - A Sales és a SpeedUp külön választhat OneDrive-szinkronizált, közvetlen SharePoint- vagy kézi forrást.
