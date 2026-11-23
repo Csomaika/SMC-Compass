@@ -1,28 +1,21 @@
-from collections import defaultdict
 from datetime import datetime, timezone
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Lock, RLock, Thread
+from threading import Lock, RLock
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
-import argparse
-import base64
 import hashlib
 import io
 import json
 import os
 import re
-import secrets
 import tempfile
 import time
-import webbrowser
 import zipfile
 
 from workbook import customers, excel_bytes, number, sales
 
 HERE = Path(__file__).resolve().parent
-PORT = 43781
 LIMIT = 35 * 1024 * 1024
 SALES_KEY = 'ofsoldelectricactuators'
 MONTHS = 'Ápr Máj Jún Júl Aug Szept Okt Nov Dec Jan Feb Márc'.split()
@@ -36,8 +29,7 @@ HOME = Path(os.environ.get('COMPASS_DATA', Path(os.environ.get('LOCALAPPDATA', P
 FILE = HOME/'compass.json'
 WRITE = RLock()
 SYNC = Lock()
-TOKEN_HEADER = secrets.token_urlsafe(32)
-SESSION = {'sp': {}, 'sugar': '', 'oauth': None}
+SESSION = {'sp': {}, 'sugar': ''}
 CHECKS = {}
 STATE = {'config': DEFAULT.copy(), 'series': {}, 'salesSheets': [], 'buyers': {}, 'manual': {}, 'scores': {},
          'opportunities': [], 'status': {}}
@@ -119,18 +111,6 @@ def microsoft_details(config):
     if sharepoint_resource(config['buyersUrl'])[0] != host:
         raise ValueError('A két SharePoint-forrásnak azonos SharePoint-bérlőben kell lennie.')
     return 'https://login.microsoftonline.com/'+tenant+'/oauth2/v2.0/', client, host+'/AllSites.Read offline_access'
-
-
-def oauth_start(config, port):
-    endpoint, client, scope = microsoft_details(config)
-    verifier = secrets.token_urlsafe(64)
-    nonce = secrets.token_urlsafe(32)
-    redirect = f'http://localhost:{port}/oauth/callback'
-    SESSION['oauth'] = (nonce, verifier, endpoint, client, scope, redirect, time.monotonic()+600)
-    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
-    return endpoint+'authorize?'+urlencode(dict(client_id=client, scope=scope, response_type='code',
-                                               response_mode='query',redirect_uri=redirect, state=nonce,
-                                               code_challenge=challenge, code_challenge_method='S256'))
 
 
 def apply_token(token, old_refresh=''):
@@ -250,18 +230,6 @@ def refresh(force=False):
         SYNC.release()
 
 
-def scheduler():
-    while True:
-        try:
-            refresh()
-        except OSError:
-            pass
-        seconds = 60*STATE['config']['minutes']
-        deadline = time.monotonic()+seconds
-        while time.monotonic() < deadline and seconds == 60*STATE['config']['minutes']:
-            time.sleep(3)
-
-
 def cumulative(value, actuals):
     running, gap, actual = 0, False, []
     for idx, original in enumerate(value):
@@ -378,210 +346,3 @@ def export(query):
                 ['Forecast módszer','3 havi átlag + előző évi szezonalitás' if report['seasonal'] else 'Utolsó legfeljebb 3 havi átlag'],
                 ['Export',now()]]
     return excel_bytes([('Forecast',rows),('Vevők',buyers),('Sugar CRM',crm),('Források',info)],12)
-
-
-class Handler(BaseHTTPRequestHandler):
-    def log_message(self,*args):
-        pass
-
-    def send(self, data, kind='application/json; charset=utf-8', code=200, attachment=False):
-        if isinstance(data, dict):
-            data = json.dumps(data, ensure_ascii=False, allow_nan=False).encode()
-        if isinstance(data, str):
-            data = data.encode()
-        self.send_response(code)
-        self.send_header('Content-Type',kind)
-        self.send_header('Cache-Control','no-store')
-        self.send_header('X-Content-Type-Options','nosniff')
-        self.send_header('Referrer-Policy','no-referrer')
-        self.send_header('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'")
-        if attachment:
-            self.send_header('Content-Disposition','attachment; filename="SMC-Compass-Export.xlsx"')
-        self.send_header('Content-Length',str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
-
-    def operation(self):
-        if self.headers.get('Host') not in {f'localhost:{self.server.server_port}', f'127.0.0.1:{self.server.server_port}'}:
-            self.send({'error':'Érvénytelen helyi cím.'},code=403)
-            return
-        url = urlsplit(self.path)
-        query = {k:v[0] for k,v in parse_qs(url.query).items()}
-        route = url.path
-        web = {'/':('index.html','text/html'),'/style.css':('style.css','text/css'),'/ui.js':('ui.js','text/javascript'),
-               '/brand.svg':('brand.svg','image/svg+xml')}
-        if self.command=='GET' and route in web:
-            name, mime = web[route]
-            data = (HERE/'web'/name).read_bytes()
-            if route=='/':
-                data=data.replace(b'__LOCAL_SESSION__',TOKEN_HEADER.encode())
-            self.send(data,mime+'; charset=utf-8')
-            return
-        if self.command=='GET' and route=='/oauth/callback':
-            self.oauth_callback(query)
-            return
-        if self.headers.get('X-Compass') != TOKEN_HEADER:
-            self.send({'error':'Nyisd meg újra az SMC Compass lapot.'},code=403)
-            return
-        if self.command=='GET':
-            if route=='/api/state':
-                with WRITE:
-                    self.send(snapshot())
-            elif route=='/api/forecast':
-                with WRITE:
-                    self.send(scenario(*forecast_args(query)))
-            elif route=='/api/export':
-                self.send(export(query),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',attachment=True)
-            else:
-                self.send({'error':'Ismeretlen végpont.'},code=404)
-            return
-        length = int(self.headers.get('Content-Length','0'))
-        upload = route in ('/api/import/sales','/api/import/buyers')
-        if length<0 or length>(LIMIT if upload else 100_000):
-            self.send({'error':'A kérés túl nagy.'},code=413)
-            return
-        raw = self.rfile.read(length)
-        if upload:
-            kind = route.split('/')[-1]
-            if not SYNC.acquire(blocking=False):
-                raise ValueError('Frissítés fut. Az import utána indítható.')
-            try:
-                ingest(kind,raw,STATE['config'].copy(),'Kézi Excel-import',True)
-                with WRITE:
-                    save()
-            finally:
-                SYNC.release()
-            self.send({'ok':True})
-            return
-        data = json.loads(raw or b'{}')
-        if route=='/api/refresh':
-            self.send({'ok':refresh(force=True)})
-            return
-        if route=='/api/sugar':
-            token = str(data.get('token','')).strip()
-            if not token or len(token)>8000 or not token.isascii() or any(c.isspace() for c in token):
-                raise ValueError('Érvényes Sugar access token szükséges.')
-            SESSION['sugar']=token
-            try:
-                sugar_import(STATE['config'].copy())
-            except Exception:
-                SESSION['sugar']=''
-                raise
-            self.send({'ok':True})
-            return
-        with WRITE:
-            if route=='/api/settings':
-                updated = {}
-                for key,default in DEFAULT.items():
-                    if key not in data:
-                        continue
-                    if type(data[key]) is not type(default):
-                        raise ValueError('Érvénytelen beállítás: '+key)
-                    updated[key]=data[key].strip()[:1400] if isinstance(default,str) else data[key]
-                config=STATE['config']|updated
-                if not 2000<=config['fiscal']<=2200 or not 1<=config['minutes']<=180 or config['source'] not in ('local','manual','sharepoint'):
-                    raise ValueError('Megengedett üzleti év 2000–2200, frissítési idő 1–180 perc.')
-                if any(config[key]!=STATE['config'][key] for key in ('tenant','client','salesUrl','buyersUrl')):
-                    SESSION['sp']={}
-                    SESSION['oauth']=None
-                if config['sugarUrl']!=STATE['config']['sugarUrl'] or config['sugarApi']!=STATE['config']['sugarApi']:
-                    SESSION['sugar']=''
-                STATE['config']=config
-            elif route=='/api/oauth':
-                self.send({'url':oauth_start(STATE['config'],self.server.server_port)})
-                return
-            elif route=='/api/manual':
-                year,metric,_,_ = forecast_args(data)
-                amount = number(data.get('amount'))
-                action = data.get('action')
-                month = int(data.get('month',0))
-                if not 0<=month<12:
-                    raise ValueError('Válassz érvényes hónapot.')
-                if action not in ('remove','target-remove') and (amount is None or abs(amount)>1e12):
-                    raise ValueError('Adj meg egy érvényes számot.')
-                entry = STATE['manual'].setdefault(str(year),{}).setdefault(metric,{})
-                if action=='target':
-                    if amount<0:
-                        raise ValueError('A célérték nem lehet negatív.')
-                    entry['target']=amount
-                elif action=='target-remove':
-                    entry.pop('target',None)
-                elif action=='remove':
-                    entry.pop(str(month),None)
-                else:
-                    entry[str(month)]={'amount':amount,'note':str(data.get('note',''))[:500],'time':now()}
-            elif route=='/api/score':
-                key=str(data.get('id',''))
-                if not any(str(row['id'])==key for row in STATE['buyers'].get('items',[])):
-                    raise ValueError('A vevő nem található.')
-                for score in ('potential','position'):
-                    if data.get(score) not in (None,1,2,3):
-                        raise ValueError('A pontszám 1–3 lehet.')
-                STATE['scores'][key]={'potential':data.get('potential'),'position':data.get('position'),
-                                      'next':str(data.get('next',''))[:1500]}
-            elif route=='/api/quit':
-                self.send({'ok':True})
-                Thread(target=self.server.shutdown,daemon=True).start()
-                return
-            else:
-                self.send({'error':'Ismeretlen művelet.'},code=404)
-                return
-            save()
-        self.send({'ok':True})
-
-    def oauth_callback(self, query):
-        with WRITE:
-            flow = SESSION['oauth']
-            valid = flow and query.get('state') and secrets.compare_digest(flow[0],query['state']) and flow[-1]>time.monotonic()
-            if not valid:
-                self.send('Érvénytelen vagy lejárt bejelentkezés.', 'text/plain; charset=utf-8',400)
-                return
-            SESSION['oauth']=None
-        _,verifier,endpoint,client,scope,redirect,_=flow
-        if 'code' not in query:
-            raise ValueError('A Microsoft bejelentkezés nem adott hozzáférést.')
-        token=json.loads(http(endpoint+'token',dict(grant_type='authorization_code',client_id=client,scope=scope,
-                                                  code=query['code'],redirect_uri=redirect,code_verifier=verifier),form=True))
-        with WRITE:
-            apply_token(token)
-        Thread(target=refresh,daemon=True).start()
-        self.send('<!doctype html><meta charset="utf-8"><title>SMC Compass</title><h2>Microsoft-bejelentkezés kész</h2><a href="/">Vissza az SMC Compasshoz</a>','text/html; charset=utf-8')
-
-    def handle_operation(self):
-        try:
-            self.operation()
-        except (BrokenPipeError,ConnectionResetError):
-            pass
-        except (ValueError, OSError, KeyError, TypeError) as error:
-            self.send({'error':str(error)},code=400)
-        except Exception:
-            self.send({'error':'Váratlan hiba a művelet közben.'},code=500)
-
-    do_GET = do_POST = handle_operation
-
-
-def main():
-    parser=argparse.ArgumentParser()
-    parser.add_argument('--port',type=int,default=PORT)
-    parser.add_argument('--headless',action='store_true')
-    parser.add_argument('--no-sync',action='store_true')
-    opts=parser.parse_args()
-    load()
-    browser_url=f'http://localhost:{opts.port}/'
-    try:
-        server=ThreadingHTTPServer(('127.0.0.1', opts.port),Handler)
-    except OSError:
-        if not opts.headless:
-            webbrowser.open(browser_url)
-            return
-        raise
-    if not opts.no_sync:
-        Thread(target=scheduler,daemon=True).start()
-    if not opts.headless:
-        webbrowser.open(browser_url)
-    with server:
-        server.serve_forever()
-
-
-if __name__=='__main__':
-    main()

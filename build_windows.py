@@ -20,7 +20,7 @@ def build(output, profile):
         app = dist/'app'
         runtime.mkdir(parents=True)
         app.mkdir()
-        for name in ('python.exe','pythonw.exe','python312.dll','vcruntime140.dll','vcruntime140_1.dll','LICENSE.txt'):
+        for name in ('python.exe','python312.dll','vcruntime140.dll','vcruntime140_1.dll','LICENSE.txt'):
             shutil.copy2(python/name,runtime/name)
         shutil.copytree(python/'DLLs',runtime/'DLLs',ignore=shutil.ignore_patterns('tcl*','tk*','_tkinter.pyd','*.lib','*.ico'))
         (runtime/'python312._pth').write_text('python312.zip\nDLLs\n.\n..\\app\n',encoding='ascii')
@@ -30,14 +30,20 @@ def build(output, profile):
                 relative = path.relative_to(lib)
                 if path.is_file() and not ignored.intersection(relative.parts):
                     archive.write(path,relative.as_posix())
-        for name in ('app.py','workbook.py'):
+        for name in ('app.py','desktop.py','updates.py','workbook.py'):
             shutil.copy2(source/name,app/name)
-        shutil.copytree(source/'web',app/'web')
+        for name in ('version.txt','CHANGELOG.md'):
+            shutil.copy2(source/name,dist/name)
         shutil.copy2(source/'README.md',dist/'OLVASS-EL.md')
         if profile:
             shutil.copy2(profile,app/'compass-profile.json')
-        subprocess.run([str(framework/'csc.exe'),'/nologo','/target:winexe','/platform:x64','/reference:System.Windows.Forms.dll',
-                        f'/out:{dist / "SMC-Compass.exe"}',str(source/'Launcher.cs')],check=True)
+        version = (source/'version.txt').read_text(encoding='utf-8').strip()
+        assembly = Path(stage)/'Version.cs'
+        assembly.write_text('using System.Reflection;\n[assembly: AssemblyTitle("SMC Compass")]\n'
+                            f'[assembly: AssemblyVersion("{version}.0")]\n[assembly: AssemblyFileVersion("{version}.0")]\n',encoding='utf-8')
+        subprocess.run([str(framework/'csc.exe'),'/nologo','/target:winexe','/platform:x64',
+                        '/reference:System.Windows.Forms.dll','/reference:System.Drawing.dll','/reference:System.Web.Extensions.dll',
+                        f'/out:{dist / "SMC-Compass.exe"}',str(assembly),*[str(source/name) for name in ('Launcher.cs','DesktopWindow.cs','ForecastChart.cs')]],check=True)
         output.parent.mkdir(parents=True,exist_ok=True)
         with ZipFile(output,'w',ZIP_DEFLATED) as archive:
             for path in sorted(dist.rglob('*')):
