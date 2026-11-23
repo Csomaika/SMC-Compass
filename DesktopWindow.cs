@@ -22,7 +22,7 @@ internal sealed class DesktopWindow : Form
     private DateTime nextRefresh;
     private Dictionary<string,object> state = Json.Fields();
     private Dictionary<string,object> forecast = Json.Fields();
-    private bool busy, binding, browserSalesActive, cancelBrowserSales;
+    private bool busy, binding, browserDownloadActive, cancelBrowserDownload;
     private int year;
     private string metric = "ofsoldelectricactuators", method = "blend", boxFilter = "";
     private int spread = 10;
@@ -52,7 +52,7 @@ internal sealed class DesktopWindow : Form
     private readonly Label sourcesStatus = Caption("",10,false);
     private readonly TextBox revisions = new TextBox { Dock = DockStyle.Fill, BorderStyle = BorderStyle.FixedSingle, Multiline = true,
         ReadOnly = true, ScrollBars = ScrollBars.Vertical, BackColor = Color.White, ForeColor = Ink, Font = new Font("Segoe UI",11) };
-    private Button refreshBtn, exportBtn, updateBtn, browserSalesBtn;
+    private Button refreshBtn, exportBtn, updateBtn, browserSalesBtn, browserBuyersBtn;
 
     private sealed class Pick
     {
@@ -172,7 +172,7 @@ internal sealed class DesktopWindow : Form
     {
         if (busy || IsDisposed) return;
         busy = true;
-        refreshBtn.Enabled = exportBtn.Enabled = updateBtn.Enabled = browserSalesBtn.Enabled = false;
+        refreshBtn.Enabled = exportBtn.Enabled = updateBtn.Enabled = browserSalesBtn.Enabled = browserBuyersBtn.Enabled = false;
         UseWaitCursor = !quiet;
         if(!quiet)foot.Text = "Művelet folyamatban…";
         try
@@ -194,7 +194,7 @@ internal sealed class DesktopWindow : Form
             if (!IsDisposed)
             {
                 UseWaitCursor = false;
-                refreshBtn.Enabled = exportBtn.Enabled = updateBtn.Enabled = browserSalesBtn.Enabled = true;
+                refreshBtn.Enabled = exportBtn.Enabled = updateBtn.Enabled = browserSalesBtn.Enabled = browserBuyersBtn.Enabled = true;
             }
         }
     }
@@ -209,14 +209,10 @@ internal sealed class DesktopWindow : Form
         updateBtn = Button("Programfrissítés",false);
         exportBtn = Button("Excel-export",true);
         refreshBtn = Button("Adatfrissítés",false);
-        browserSalesBtn = Button("Sales frissítése böngészőből",false);
+        browserSalesBtn = BrowserDownloadButton("sales","Sales");
         updateBtn.Click += (s,e) => Run(UpdateProgram);
         exportBtn.Click += (s,e) => Run(Export);
         refreshBtn.Click += (s,e) => Run(() => RefreshData(true,true));
-        browserSalesBtn.Click += (s,e) => {
-            if(browserSalesActive)cancelBrowserSales=true;
-            else Run(ImportSalesFromBrowser);
-        };
         actions.Controls.Add(updateBtn);
         actions.Controls.Add(exportBtn);
         actions.Controls.Add(refreshBtn);
@@ -491,11 +487,14 @@ internal sealed class DesktopWindow : Form
         PathSetting(list,"SpeedUp helyi / OneDrive-fájl","buyersPath");
         Setting(list,"Sales SharePoint-munkafüzet","salesUrl",Edit(600));
         Setting(list,"Böngészős Sales-fájlnév","salesDownloadName",Edit(300));
-        Setting(list,"Böngésző letöltési mappája","salesDownloadFolder",Edit(420));
         Setting(list,"SpeedUp SharePoint-munkafüzet","buyersUrl",Edit(600));
+        Setting(list,"Böngészős SpeedUp-fájlnév","buyersDownloadName",Edit(300));
+        Setting(list,"Böngésző letöltési mappája","salesDownloadFolder",Edit(420));
         var imports=Row(); imports.AutoSize=true;imports.Controls.Add(Action("Beállítások mentése",SaveSources,true));
         imports.Controls.Add(Action("Sales XLSX importálása",()=>Import("sales")));
         imports.Controls.Add(Action("SpeedUp XLSX importálása",()=>Import("buyers")));
+        browserBuyersBtn=BrowserDownloadButton("buyers","SpeedUp");
+        imports.Controls.Add(browserBuyersBtn);
         voidRow(list,imports);
         voidRow(list,Caption("Microsoft Entra · közvetlen SharePoint",13,true));
         Setting(list,"Microsoft tenant ID","tenant",Edit(450));
@@ -532,7 +531,7 @@ internal sealed class DesktopWindow : Form
         var mode=Picker();mode.Width=360;
         var choices = new List<Pick>{new Pick("","Alapértelmezett mód"),new Pick("local","Helyi / OneDrive-szinkronizált fájl"),
             new Pick("sharepoint","Közvetlen SharePoint (Entra)"),new Pick("manual","Kézi Excel-import")};
-        if(key=="salesSource")choices.Add(new Pick("browser","SharePoint · böngészős letöltés"));
+        choices.Add(new Pick("browser","SharePoint · böngészős letöltés"));
         SetChoices(mode,choices,"");
         Setting(list,label,key,mode);
     }
@@ -871,54 +870,65 @@ internal sealed class DesktopWindow : Form
             SourceMode(kind)=="manual"?"kézi import":Json.Flag(Source(kind),"ok")?"frissítve":"korábbi adatok")));
     }
 
-    private async Task ImportSalesFromBrowser()
+    private Button BrowserDownloadButton(string kind,string label)
     {
-        browserSalesActive=true;
-        cancelBrowserSales=false;
+        var button=Button(label+" frissítése böngészőből",false);
+        button.Click+=(s,e)=>{
+            if(browserDownloadActive)cancelBrowserDownload=true;
+            else Run(()=>ImportFromBrowser(kind,label,button));
+        };
+        return button;
+    }
+
+    private async Task ImportFromBrowser(string kind,string label,Button button)
+    {
+        browserDownloadActive=true;
+        cancelBrowserDownload=false;
+        string originalCaption=button.Text;
         try
         {
-            var options=Json.Fields("downloads",Launcher.DownloadsFolder());
-            var start=await worker.CallAsync("browser-sales-start",options);
+            var options=Json.Fields("kind",kind,"downloads",Launcher.DownloadsFolder());
+            var start=await worker.CallAsync("browser-download-start",options);
             if(Json.Flag(start,"needsName"))
             {
-                string filename=AskSalesDownloadName();
+                string filename=AskDownloadName(label);
                 if(String.IsNullOrWhiteSpace(filename)){foot.Text="Böngészős frissítés megszakítva.";return;}
                 options["filename"]=filename;
-                start=await worker.CallAsync("browser-sales-start",options);
+                start=await worker.CallAsync("browser-download-start",options);
             }
             Launcher.OpenWeb(Json.Text(start,"url"));
-            browserSalesBtn.Text="Böngészős frissítés megszakítása";
-            browserSalesBtn.Enabled=true;
+            button.Text="Letöltés megszakítása";
+            button.Enabled=true;
             UseWaitCursor=false;
-            foot.Text="Várom a friss Sales Excelt a Letöltések mappában…";
-            while(!cancelBrowserSales)
+            foot.Text="Várom a friss "+label+" Excelt a Letöltések mappában…";
+            while(!cancelBrowserDownload)
             {
                 await Task.Delay(700);
-                if(cancelBrowserSales)break;
-                var result=await worker.CallAsync("browser-sales-poll");
+                if(cancelBrowserDownload)break;
+                var result=await worker.CallAsync("browser-download-poll");
                 string status=Json.Text(result,"result");
                 if(status=="imported")
                 {
                     await RefreshState(true);await FetchForecast();
-                    foot.Text="Sales frissítve SharePointról: "+Json.Text(result,"name");
+                    foot.Text=label+" frissítve SharePointról: "+Json.Text(result,"name");
                     return;
                 }
                 if(status=="timeout")
-                    throw new InvalidOperationException("Nem érkezett új Sales Excel. Ha a böngésző belépést kért, fejezd be, majd próbáld újra. Eltérő letöltési mappát a Források fülön adhatsz meg.");
+                    throw new InvalidOperationException("Nem érkezett új "+label+" Excel. Ha a böngésző belépést kért, fejezd be, majd próbáld újra. Eltérő letöltési mappát a Források fülön adhatsz meg.");
             }
-            await worker.CallAsync("browser-sales-cancel");
+            await worker.CallAsync("browser-download-cancel");
             foot.Text="Böngészős frissítés megszakítva.";
         }
         finally
         {
-            browserSalesBtn.Text="Sales frissítése böngészőből";
-            browserSalesActive=false;
+            button.Text=originalCaption;
+            browserDownloadActive=false;
         }
     }
 
-    private string AskSalesDownloadName()
+    private string AskDownloadName(string label)
     {
-        using(var dialog = new Form { Text="Sales Excel neve", StartPosition=FormStartPosition.CenterParent,
+        using(var dialog = new Form { Text=label+" Excel neve", StartPosition=FormStartPosition.CenterParent,
             FormBorderStyle=FormBorderStyle.FixedDialog, MaximizeBox=false, MinimizeBox=false, ClientSize=new Size(390,128) })
         {
             var prompt=Caption("Add meg egyszer a SharePointon látható Excel-fájl nevét.",10,false);

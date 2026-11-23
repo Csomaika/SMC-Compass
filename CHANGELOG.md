@@ -1,5 +1,11 @@
 # SMC Compass · verziónapló
 
+## 1.3.0 · Szerkeszthető Excel és SpeedUp-frissítés
+
+- Az Excelben kézzel is felvehető a havi tény. A három forecast-forgatókönyv és a grafikon az új adatok alapján számolódik újra.
+- Az exportált 9-box mátrix követi a **Vevők** lapon szerkesztett pontszámokat.
+- A SpeedUp a céges böngészős munkamenetből, egy gombbal letölthető és beolvasható.
+
 ## 1.2.3 · Programfrissítés a Compassból
 
 - A **Programfrissítés** jóváhagyás után letölti és ellenőrzi az új MSI-t, bezárja a Compasst, majd elindítja a Windows Installer telepítését.

@@ -5,6 +5,8 @@ on:
   push:
     branches: [main]
     paths: [version.txt, .github/workflows/windows-release.yml]
+  pull_request:
+    paths: ['*.py', '*.cs', 'version.txt', '.github/workflows/windows-release.yml']
 
 permissions:
   contents: write
@@ -82,8 +84,10 @@ jobs:
           name: SMC-Compass-Windows-verified
           path: |
             dist/SMC-Compass-Setup.msi
+            dist/SMC-Compass-Windows.zip
             dist/SMC-Compass-Preview.png
       - name: Publish release
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

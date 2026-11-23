@@ -6,14 +6,14 @@ import sys
 import time
 from pathlib import Path
 from urllib.error import HTTPError
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import Request, build_opener
 
 import app as core
 import updates
 
 DEVICE = {}
-BROWSER_SALES = {}
+BROWSER_DOWNLOAD = {}
 
 
 def configure(fields):
@@ -29,7 +29,7 @@ def configure(fields):
             raise ValueError('Üzleti év 2000–2200, frissítési idő 1–180 perc.')
         if cfg['source'] not in ('manual','local','sharepoint'):
             raise ValueError('Érvénytelen adatforrásmód.')
-        if cfg['salesSource'] not in ('','manual','local','sharepoint','browser') or cfg['buyersSource'] not in ('','manual','local','sharepoint'):
+        if any(cfg[key] not in ('','manual','local','sharepoint','browser') for key in ('salesSource','buyersSource')):
             raise ValueError('Érvénytelen munkafüzet-forrásmód.')
         if any(cfg[k] != current[k] for k in ('tenant','client','salesUrl','buyersUrl','source','salesSource','buyersSource')):
             core.SESSION['sp'] = {}
@@ -118,12 +118,17 @@ def download_candidates(folder, matcher):
     return candidates
 
 
-def start_browser_sales(data):
-    BROWSER_SALES.clear()
+def start_browser_download(data):
+    BROWSER_DOWNLOAD.clear()
+    kind = data['kind']
+    if kind not in ('sales', 'buyers'):
+        raise ValueError('Ismeretlen SharePoint-forrás.')
     config = core.STATE['config']
-    url = core.sharepoint_browser_download(config['salesUrl'])
-    filename = (data.get('filename') or config['salesDownloadName'] or core.PROFILE.get('salesSnapshot') or
-                re.sub(r' \(\d+\)(?=\.xls[xm]$)', '', Path(config['salesPath']).name, flags=re.IGNORECASE)).strip()
+    source_url = config[kind+'Url']
+    url = core.sharepoint_browser_download(source_url)
+    linked_name = parse_qs(urlsplit(source_url).query).get('file', [''])[0]
+    filename = (data.get('filename') or config[kind+'DownloadName'] or linked_name or core.PROFILE.get(kind+'Snapshot') or
+                re.sub(r' \(\d+\)(?=\.xls[xm]$)', '', Path(config[kind+'Path']).name, flags=re.IGNORECASE)).strip()
     if not filename:
         return {'needsName':True}
     suffix = Path(filename).suffix
@@ -134,13 +139,13 @@ def start_browser_sales(data):
     folder = Path(config['salesDownloadFolder'] or data['downloads'])
     if not folder.is_absolute() or not folder.is_dir():
         raise ValueError('A böngésződ tényleges letöltési mappáját add meg a Források fülön.')
-    BROWSER_SALES.update(folder=folder,matcher=matcher,before=download_candidates(folder,matcher),
-                         candidate=None,expires=time.monotonic()+120,filename=filename)
+    BROWSER_DOWNLOAD.update(folder=folder,matcher=matcher,before=download_candidates(folder,matcher),
+                            candidate=None,expires=time.monotonic()+120,filename=filename,kind=kind)
     return {'url':url}
 
 
-def poll_browser_sales():
-    job = BROWSER_SALES
+def poll_browser_download():
+    job = BROWSER_DOWNLOAD
     if not job or time.monotonic()>=job['expires']:
         job.clear()
         return {'result':'timeout'}
@@ -151,14 +156,14 @@ def poll_browser_sales():
         job['candidate'] = candidate
         return {'result':'waiting'}
     path,_ = candidate
+    kind = job['kind']
 
     def confirm(config):
-        config['salesDownloadName'] = job['filename']
-        # Keep future background checks from importing an older Downloads copy.
-        config['salesSource'] = 'browser'
+        config[kind+'DownloadName'] = job['filename']
+        config[kind+'Source'] = 'browser'
 
     try:
-        import_workbook({'kind':'sales','path':str(path)},'SharePoint · böngészős letöltés',confirm)
+        import_workbook({'kind':kind,'path':str(path)},'SharePoint · böngészős letöltés',confirm)
     except (PermissionError,FileNotFoundError):
         job['candidate'] = None
         return {'result':'waiting'}
@@ -231,10 +236,10 @@ def dispatch(action, data):
         return core.scenario(*core.forecast_args(data))
     if action=='refresh':
         return {'ok':True, 'changed':core.refresh(force=bool(data.get('force')),local_only=bool(data.get('localOnly')))}
-    if action=='browser-sales-start':
-        return start_browser_sales(data)
-    if action=='browser-sales-poll':
-        return poll_browser_sales()
+    if action=='browser-download-start':
+        return start_browser_download(data)
+    if action=='browser-download-poll':
+        return poll_browser_download()
     if action=='config':
         configure(data)
     elif action=='manual':
@@ -253,8 +258,8 @@ def dispatch(action, data):
         return poll_signin()
     elif action=='signin-cancel':
         DEVICE.clear()
-    elif action=='browser-sales-cancel':
-        BROWSER_SALES.clear()
+    elif action=='browser-download-cancel':
+        BROWSER_DOWNLOAD.clear()
     elif action=='update-check':
         return updates.check()
     elif action=='update-install':
