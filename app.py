@@ -13,7 +13,7 @@ import tempfile
 import time
 import zipfile
 
-from workbook import customers, excel_bytes, number, sales
+from workbook import Formula, customers, excel_bytes, number, sales
 
 HERE = Path(__file__).resolve().parent
 LIMIT = 35 * 1024 * 1024
@@ -21,7 +21,7 @@ SALES_KEY = 'ofsoldelectricactuators'
 MONTHS = 'Ápr Máj Jún Júl Aug Szept Okt Nov Dec Jan Feb Márc'.split()
 DEFAULT = dict(salesUrl='', buyersUrl='', salesPath='', buyersPath='', salesSheet='REPORT26', previousSheet='REPORT25',
                buyersSheet='Munka1', fiscal=2026, minutes=10, source='local', tenant='', client='',
-               salesSource='', buyersSource='', salesDownloadName='', salesDownloadFolder='',
+               salesSource='', buyersSource='', salesDownloadName='', buyersDownloadName='', salesDownloadFolder='',
                sugarUrl='', sugarApi='v11', sugarMine=True)
 PROFILE_FILE = HERE/'compass-profile.json'
 PROFILE = json.loads(PROFILE_FILE.read_text(encoding='utf-8-sig')) if PROFILE_FILE.is_file() else {}
@@ -370,17 +370,55 @@ def forecast_args(query):
     return year,metric,factor,method
 
 
+def forecast_export_rows(report):
+    y, count = report['year'], report['count']
+    source = STATE['series'].get(str(y), {}).get('metrics', {}).get(report['metric'], {})
+    source_actual = source.get('actual', [None]*12)
+    source_plan = source.get('plan', [None]*12)
+    rows = [['Hónap','Tény YTD (db)','Terv YTD (db)','Forecast YTD (db)','Óvatos (db)','Erős (db)',
+             'Előző FY YTD (db)','Havi tény (db)','Kézi havi tény (db)','Forrás tény YTD (db)',
+             'Forrás terv YTD (db)','Becsült havi érték','Előző FY havi tény','Kézi megjegyzés']]
+    settings = "'Források'!"
+    for i, month in enumerate(MONTHS):
+        row, period = i+2, i+1
+        prior = f'B{row-1}' if i else '0'
+        prior_source = f'J{row-1}' if i else '0'
+        prior_year = f'G{row-1}' if i else '0'
+        entry = report['entry'].get(str(i), {})
+        values = [f'{month} {y+(i>=9)}',
+                  Formula(f'IF(ISNUMBER(H{row}),{prior}+H{row},NA())', report['actual'][i]),
+                  Formula(f'IF(ISNUMBER({settings}$B$11),{settings}$B$11*{period}/12,IF(ISNUMBER(K{row}),K{row},NA()))', report['plan'][i])]
+        step = report['forecast'][i]-report['forecast'][i-1] if count and i>=count else None
+        for col, key, multiplier in [('D','forecast','1'),('E','low',f'1-{settings}$B$10'),('F','high',f'1+{settings}$B$10')]:
+            values.append(Formula(f'IF(OR({settings}$B$12=0,{settings}$B$12=12,{period}<{settings}$B$12),NA(),'
+                                  f'IF({period}={settings}$B$12,B{row},{col}{row-1}+L{row}*({multiplier})))', report[key][i]))
+        prev_value = report['prev'][i]
+        prev_base = report['prev'][i-1] if i else 0
+        previous_month = prev_value-prev_base if prev_value is not None and prev_base is not None else None
+        values.extend([prev_value,
+                       Formula(f'IF(ISNUMBER({prior}),IF(ISNUMBER(I{row}),I{row},IF(AND(ISNUMBER(J{row}),'
+                               f'ISNUMBER({prior_source})),J{row}-{prior_source},NA())),NA())',
+                               report['monthly'][i] if i<count else None),
+                       entry.get('amount'), source_actual[i], source_plan[i],
+                       Formula(f'IF(AND({settings}$B$12>0,{period}>{settings}$B$12),MAX(0,IF({settings}$B$14,'
+                               f'({settings}$B$13+M{row}*{settings}$B$15)/2,{settings}$B$13)),NA())', step),
+                       Formula(f'IF(AND(ISNUMBER(G{row}),ISNUMBER({prior_year})),G{row}-{prior_year},NA())', previous_month),
+                       entry.get('note')])
+        rows.append(values)
+    rows.append(['A kék cellákba havi tényt és megjegyzést írhatsz. A forecast az utolsó folytonos tényhónapból indul.'])
+    return rows
+
+
 def export(query):
     with WRITE:
-        report = scenario(*forecast_args(query))
+        args = forecast_args(query)
+        report = scenario(*args)
         y = report['year']
-        rows = [['Hónap','Tény YTD (db)','Terv YTD (db)','Forecast YTD (db)','Óvatos (db)','Erős (db)','Előző FY YTD (db)','Havi tény (db)']]
-        for i, m in enumerate(MONTHS):
-            rows.append([f'{m} {y+(i>=9)}', *[report[key][i] for key in ('actual','plan','forecast','low','high','prev')],
-                         report['monthly'][i] if i<len(report['monthly']) else None])
+        rows = forecast_export_rows(report)
         filtered = query.get('visible','1')=='1'
         buyers = [['Ügyfélkód','Vevő','Város','SAE','TEC','Kategória','Potenciál','SMC pozíció','Következő lépés','Rejtett a forrásban']]
-        for source in STATE['buyers'].get('items',[]):
+        buyers_source = STATE['buyers']
+        for source in buyers_source.get('items',[]):
             item = cleaned_scores(source)
             if filtered and item['hidden']:
                 continue
@@ -388,9 +426,24 @@ def export(query):
         crm_keys = ('name','account_name','sales_stage','amount','currency_iso','currency_id','probability','date_closed','assigned_user_name')
         crm = [['Lehetőség','Vevő','Státusz','Összeg','ISO pénznem','Pénznem ID','Valószínűség (%)','Zárás','Felelős']]
         crm.extend([[number(a.get(k)) if k in ('amount','probability') else a.get(k) for k in crm_keys] for a in STATE['opportunities']])
+        count = report['count']
+        recent = report['monthly'][-3:]
+        ratio = report['actual'][count-1]/report['prev'][count-1] if report['seasonal'] else 0
         info = [['Tulajdonság','Érték'],['Üzleti év',f'FY {y} / április–március'],['Mutató',report['label']],
-                ['Sales munkalap',report['source']],['Vevőlista munkalap',STATE['buyers'].get('sheet','')],
+                ['Sales munkalap',report['source']],['Vevőlista munkalap',buyers_source.get('sheet','')],
                 ['Excel-szűrés (vevők)','Csak látható sorok' if filtered else 'Összes sor'],
-                ['Forecast módszer','3 havi átlag + előző évi szezonalitás' if report['seasonal'] else 'Utolsó legfeljebb 3 havi átlag'],
-                ['Export',now()]]
-    return excel_bytes([('Forecast',rows),('Vevők',buyers),('Sugar CRM',crm),('Források',info)],12)
+                ['Export',now()],['Kézi frissítés','A Forecast lapon a kék cellákba írd a havi tényt. Ha van forrásadat, a kézi érték elsőbbséget kap.'],
+                ['Forecast módszer','Szezonális' if args[3]=='blend' else '3 havi átlag'],['Forgatókönyv-eltérés',args[2]/100],
+                ['Kézi éves cél (db)',report['target']],['Folytonos tényhónapok',Formula('COUNT(Forecast!B2:B13)', count)],
+                ['Utolsó legfeljebb 3 hónap átlaga',Formula('IF(B12=0,NA(),AVERAGE(INDEX(Forecast!H2:H13,MAX(1,B12-2)):INDEX(Forecast!H2:H13,B12)))',sum(recent)/len(recent) if recent else None)],
+                ['Szezonalitás aktív (1 = igen)',Formula('IF(AND(B9="Szezonális",B12>=2,B12<12,COUNT(Forecast!G2:G13)=12),'
+                                                        'IF(AND(INDEX(Forecast!G2:G13,B12)>0,MIN(Forecast!M2:M13)>=0),1,0),0)',int(report['seasonal']))],
+                ['Arány az előző évhez',Formula('IF(B14,INDEX(Forecast!B2:B13,B12)/INDEX(Forecast!G2:G13,B12),0)',ratio)],
+                ['Friss forrásadatok','A következő SharePoint- vagy Sugar-frissítés után a Compassból készíthetsz új Excel-exportot.'],
+                ['SpeedUp mentett aktív szűrők',sum(bool(group['criteria']) for group in buyers_source.get('filters',[])) if buyers_source.get('sheet') else None],
+                ['SpeedUp rejtett vevősorok',sum(item['hidden'] for item in buyers_source.get('items',[])) if buyers_source.get('sheet') else None]]
+        matrix = [['Piaci potenciál / SMC-pozíció', 1, 2, 3]]
+        for p in (3,2,1):
+            matrix.append([p, *[Formula(f'COUNTIFS(\'Vevők\'!G:G,$A{5-p},\'Vevők\'!H:H,{col}$1)',
+                                        sum(row[6]==p and row[7]==q for row in buyers[1:])) for q,col in enumerate('BCD',1)]])
+    return excel_bytes([('Forecast',rows),('Vevők',buyers),('9-box',matrix),('Sugar CRM',crm),('Források',info)],12,editable=True)
