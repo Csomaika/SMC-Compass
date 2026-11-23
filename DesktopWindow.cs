@@ -26,15 +26,19 @@ internal sealed class DesktopWindow : Form
     private string metric = "ofsoldelectricactuators", method = "blend", boxFilter = "";
     private int spread = 10;
 
-    private readonly TabControl tabs = new TabControl { Dock = DockStyle.Fill, Padding = new Point(15,7) };
-    private readonly Label headline = Caption("",22,true);
-    private readonly Label syncLine = Caption("",10,false);
+    private readonly NativePages tabs = new NativePages();
+    private readonly HeroPanel hero = new HeroPanel { Dock=DockStyle.Fill, Margin=new Padding(3,3,4,9) };
+    private readonly Label breadcrumb = Caption("PSD   /   Áttekintés",12,true);
+    private readonly Label sidebarStatus = Caption("Források betöltése",9,false);
+    private readonly NavButton[] navigation = new NavButton[6];
     private readonly Label foot = Caption("Indítás…",10,false);
     private readonly Label chartNote = Caption("",10,false);
     private readonly Label matrixNote = Caption("",10,false);
     private readonly Label sugarNote = Caption("",10,false);
     private readonly Label inputNote = Caption("",10,false);
-    private readonly Label[] cards = new Label[4];
+    private readonly KpiCard[] cards = new KpiCard[4];
+    private readonly Label[] scenarios = new Label[3];
+    private readonly Label modelNote = Caption("",9,false);
     private readonly ForecastChart chart = new ForecastChart { Dock = DockStyle.Fill };
     private readonly ComboBox years = Picker(), metrics = Picker(), methods = Picker(), spreads = Picker(),
         entryMonth = Picker(), owners = Picker();
@@ -56,13 +60,13 @@ internal sealed class DesktopWindow : Form
         public override string ToString() { return Label; }
     }
 
-    internal DesktopWindow(Worker worker)
+    internal DesktopWindow(Worker worker,bool testing=false)
     {
         this.worker = worker;
         Text = "SMC Compass  ·  " + Launcher.Version;
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(930,700);
-        Size = new Size(1315,875);
+        MinimumSize = new Size(1090,740);
+        Size = new Size(1370,890);
         Font = new Font("Segoe UI",10);
         ForeColor = Ink;
         BackColor = Cloud;
@@ -70,16 +74,21 @@ internal sealed class DesktopWindow : Form
         string ico = Path.Combine(Launcher.Folder,"Compass.ico");
         if (File.Exists(ico)) Icon = new Icon(ico);
 
-        var shell = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = Cloud, Padding = new Padding(14,9,14,4) };
-        shell.RowStyles.Add(new RowStyle(SizeType.Absolute,68));
-        shell.RowStyles.Add(new RowStyle(SizeType.Percent,100));
-        shell.RowStyles.Add(new RowStyle(SizeType.Absolute,32));
+        var shell = new TableLayoutPanel { Dock=DockStyle.Fill, ColumnCount=2, RowCount=1, BackColor=Cloud };
+        shell.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,226));shell.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
         Controls.Add(shell);
-        shell.Controls.Add(Header(),0,0);
-        shell.Controls.Add(tabs,0,1);
+        shell.Controls.Add(Sidebar(),0,0);
+        var content = new TableLayoutPanel { Dock=DockStyle.Fill, ColumnCount=1, RowCount=3, BackColor=Cloud, Margin=new Padding(0) };
+        content.RowStyles.Add(new RowStyle(SizeType.Absolute,69));
+        content.RowStyles.Add(new RowStyle(SizeType.Percent,100));
+        content.RowStyles.Add(new RowStyle(SizeType.Absolute,28));
+        shell.Controls.Add(content,1,0);
+        content.Controls.Add(Header(),0,0);
+        content.Controls.Add(tabs,0,1);
         foot.Dock = DockStyle.Fill;
         foot.TextAlign = ContentAlignment.MiddleLeft;
-        shell.Controls.Add(foot,0,2);
+        foot.Padding=new Padding(16,0,6,0);
+        content.Controls.Add(foot,0,2);
 
         BuildOverview(Page("Áttekintés"));
         BuildInput(Page("Havi adatbevitel"));
@@ -87,6 +96,8 @@ internal sealed class DesktopWindow : Form
         BuildPipeline(Page("Sugar pipeline"));
         BuildSources(Page("Források"));
         BuildRevisions(Page("Verziónapló"));
+        tabs.SelectedIndexChanged+=(s,e)=>ShowPage();
+        ShowPage();
 
         years.SelectedIndexChanged += (s,e) => SelectForecast();
         metrics.SelectedIndexChanged += (s,e) => SelectForecast();
@@ -97,7 +108,7 @@ internal sealed class DesktopWindow : Form
         owners.SelectedIndexChanged += (s,e) => { if (!binding) FillCustomers(); };
         sugarSearch.TextChanged += (s,e) => { if (!binding) FillPipeline(); };
         visible.CheckedChanged += (s,e) => { if (!binding) FillCustomers(); };
-        Shown += (s,e) => Run(Initial);
+        if(!testing)Shown += (s,e) => Run(Initial);
         timer.Tick += (s,e) => { if (!busy && DateTime.UtcNow >= nextRefresh) Run(() => RefreshData(false,false)); };
         FormClosing += (s,e) => { if (busy && e.CloseReason == CloseReason.UserClosing) { e.Cancel=true; foot.Text="Művelet folyamatban. Várd meg a befejezést."; } };
         FormClosed += (s,e) => timer.Dispose();
@@ -112,7 +123,33 @@ internal sealed class DesktopWindow : Form
         FillState();
         RenderForecast();
         foreach (TabPage tab in tabs.TabPages) { tabs.SelectedTab = tab; tab.PerformLayout(); }
+        tabs.SelectedIndex=0;
+        PerformLayout();
+        tabs.SelectedTab.PerformLayout();
         using (var image = new Bitmap(980,420)) chart.DrawToBitmap(image,new Rectangle(0,0,image.Width,image.Height));
+        string capture=Environment.GetEnvironmentVariable("COMPASS_TEST_CAPTURE");
+        if(!String.IsNullOrEmpty(capture))
+        {
+            StartPosition=FormStartPosition.Manual;
+            Location=new Point(-Width-100,-Height-100);
+            ShowInTaskbar=false;
+            Show();
+            Application.DoEvents();
+            forecast=Json.Fields("label","Elektromos aktuátorok","source","REPORT26","count",7,"seasonal",true,"ending",1996,
+                "actual",new object[]{194,385,554,671,840,997,1143,null,null,null,null,null},
+                "plan",new object[]{213,427,640,853,1067,1280,1493,1707,1920,2133,2347,2560},
+                "prev",new object[]{192,335,488,641,808,1005,1181,1314,1490,1650,1776,1960},
+                "forecast",new object[]{null,null,null,null,null,null,1143,1301,1470,1634,1832,1996},
+                "low",new object[]{null,null,null,null,null,null,1143,1285,1437,1585,1763,1911},
+                "high",new object[]{null,null,null,null,null,null,1143,1317,1503,1683,1901,2081});
+            RenderForecast();
+            Application.DoEvents();
+            using(var image=new Bitmap(Width,Height))
+            {
+                DrawToBitmap(image,new Rectangle(0,0,image.Width,image.Height));
+                image.Save(capture,System.Drawing.Imaging.ImageFormat.Png);
+            }
+        }
     }
 
     private async Task Initial()
@@ -159,16 +196,11 @@ internal sealed class DesktopWindow : Form
 
     private Control Header()
     {
-        var head = new Panel { Dock = DockStyle.Fill, BackColor = Cloud };
-        var mark = new CompassMark { Location = new Point(8,7), Size = new Size(47,47) };
-        var title = Caption("SMC Compass",18,true);
-        title.Location = new Point(66,5);
-        var caption = Caption("PSD SALES WORKSPACE   /   v" + Launcher.Version,9,false);
-        caption.Location = new Point(68,35);
-        head.Controls.Add(mark);
-        head.Controls.Add(title);
-        head.Controls.Add(caption);
-        var actions = new FlowLayoutPanel { Dock = DockStyle.Right, Width = 520, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0,10,0,0), WrapContents = false };
+        var head = new Panel { Dock=DockStyle.Fill, BackColor=Color.White, Margin=new Padding(0,0,0,8) };
+        head.Paint+=(s,e)=>{using(var line=new Pen(CompassStyle.Border))e.Graphics.DrawLine(line,0,head.Height-1,head.Width,head.Height-1);};
+        breadcrumb.Location=new Point(21,18);
+        head.Controls.Add(breadcrumb);
+        var actions = new FlowLayoutPanel { Dock=DockStyle.Right, Width=515, FlowDirection=FlowDirection.RightToLeft, Padding=new Padding(0,9,15,0), WrapContents=false, BackColor=Color.White };
         updateBtn = Button("Programfrissítés",false);
         exportBtn = Button("Excel-export",true);
         refreshBtn = Button("Adatfrissítés",false);
@@ -182,9 +214,45 @@ internal sealed class DesktopWindow : Form
         return head;
     }
 
+    private Control Sidebar()
+    {
+        var panel=new Panel { Dock=DockStyle.Fill, Margin=new Padding(0), BackColor=CompassStyle.Navy };
+        panel.Controls.Add(new CompassMark { Location=new Point(18,20), Size=new Size(43,43), BackColor=CompassStyle.Navy });
+        var title=Caption("SMC Compass",16,true);title.ForeColor=Color.White;title.Location=new Point(69,19);panel.Controls.Add(title);
+        var product=Caption("PSD SALES WORKSPACE",8,true);product.ForeColor=Color.FromArgb(128,177,216);product.Location=new Point(71,47);panel.Controls.Add(product);
+        var labels=new[]{"Áttekintés","Havi adatbevitel","9-box vevőmátrix","Sugar pipeline","Források","Verziónapló"};
+        var marks=new[]{"▤","✎","▦","◇","⚙","◷"};
+        for(int i=0;i<labels.Length;i++)
+        {
+            int index=i;
+            var button=new NavButton(labels[i],marks[i]) { Location=new Point(14,91+i*50) };
+            button.Click+=(s,e)=>tabs.SelectedIndex=index;
+            navigation[i]=button;panel.Controls.Add(button);
+        }
+        var bottom=new Panel { Dock=DockStyle.Bottom, Height=70, BackColor=CompassStyle.Navy };
+        bottom.Paint+=(s,e)=>{using(var line=new Pen(Color.FromArgb(42,69,96)))e.Graphics.DrawLine(line,15,0,bottom.Width-15,0);};
+        var space=Caption("Helyi munkaterület",10,true);space.ForeColor=Color.White;space.Location=new Point(19,12);bottom.Controls.Add(space);
+        sidebarStatus.ForeColor=Color.FromArgb(149,183,212);sidebarStatus.Location=new Point(19,36);bottom.Controls.Add(sidebarStatus);
+        panel.Controls.Add(bottom);
+        return panel;
+    }
+
+    private void ShowPage()
+    {
+        if(tabs.SelectedIndex<0)return;
+        foreach(var item in navigation)
+        {
+            if(item==null)continue;
+            item.Active=Object.ReferenceEquals(item,navigation[tabs.SelectedIndex]);
+            item.Invalidate();
+        }
+        breadcrumb.Text="PSD   /   "+tabs.SelectedTab.Text;
+        if(tabs.SelectedIndex==0)hero.Animate();
+    }
+
     private TabPage Page(string title)
     {
-        var page = new TabPage(title) { BackColor = Cloud, Padding = new Padding(10) };
+        var page = new TabPage(title) { BackColor = Cloud, Padding = new Padding(15,8,16,7) };
         tabs.TabPages.Add(page);
         return page;
     }
@@ -262,19 +330,11 @@ internal sealed class DesktopWindow : Form
 
     private void BuildOverview(TabPage page)
     {
-        var layout = Frame(66,52,82,0,34);
+        var layout = Frame(141,55,111,0,32);
         page.Controls.Add(layout);
-        var hero = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(12,56,98), Margin = new Padding(3,3,3,5) };
-        headline.Text = "Értékesítési előrejelzés";
-        headline.ForeColor = Color.White;
-        headline.Location = new Point(16,4);
-        syncLine.ForeColor = Color.FromArgb(200,226,251);
-        syncLine.Location = new Point(18,38);
-        hero.Controls.Add(headline);
-        hero.Controls.Add(syncLine);
         layout.Controls.Add(hero,0,0);
         var choice = Row();
-        years.Width=105; metrics.Width=235; methods.Width=170; spreads.Width=78;
+        years.Width=98; metrics.Width=211; methods.Width=164; spreads.Width=68;
         AddField(choice,"Üzleti év",years);
         AddField(choice,"Mutató",metrics);
         AddField(choice,"Módszer",methods);
@@ -282,19 +342,45 @@ internal sealed class DesktopWindow : Form
         layout.Controls.Add(choice,0,1);
         var values = new TableLayoutPanel { ColumnCount = 4, RowCount = 1, Dock = DockStyle.Fill };
         string[] names = {"Tény YTD","Éves cél","Év végi forecast","Eltérés a céltól"};
+        string[] marks = {"╱","◎","↗","↔"};
         for (int i=0;i<4;i++)
         {
             values.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,25));
-            var card = new Panel { Dock = DockStyle.Fill, Margin = new Padding(3,0,5,6), BackColor = Color.White };
-            var label = Caption(names[i],10,false); label.Location=new Point(13,8); card.Controls.Add(label);
-            cards[i] = Caption("—",20,true); cards[i].Location=new Point(12,29); card.Controls.Add(cards[i]);
-            values.Controls.Add(card,i,0);
+            cards[i] = new KpiCard(names[i],marks[i]) { Dock=DockStyle.Fill, Margin=new Padding(3,1,6,8) };
+            values.Controls.Add(cards[i],i,0);
         }
         layout.Controls.Add(values,0,2);
-        layout.Controls.Add(chart,0,3);
+        var visuals=new TableLayoutPanel { Dock=DockStyle.Fill, ColumnCount=2, RowCount=1, Margin=new Padding(0) };
+        visuals.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));visuals.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,254));
+        var left=new CardPanel { Dock=DockStyle.Fill, Margin=new Padding(3,1,7,0), Padding=new Padding(6) };
+        left.Controls.Add(chart);visuals.Controls.Add(left,0,0);
+        visuals.Controls.Add(Scenarios(),1,0);
+        layout.Controls.Add(visuals,0,3);
         chartNote.Dock=DockStyle.Fill;
         chartNote.TextAlign=ContentAlignment.MiddleLeft;
         layout.Controls.Add(chartNote,0,4);
+    }
+
+    private Control Scenarios()
+    {
+        var panel=new CardPanel { Dock=DockStyle.Fill, Margin=new Padding(1,1,4,0), Padding=new Padding(13,10,13,10) };
+        var content=Frame(31,40,40,40,28,0);
+        content.BackColor=Color.White;
+        content.Controls.Add(Caption("Év végi forgatókönyvek",12,true),0,0);
+        string[] names={"Óvatos","Alap","Erős"};
+        for(int i=0;i<names.Length;i++)
+        {
+            var row=new CardPanel { Dock=DockStyle.Fill, Radius=7, Fill=i==1?CompassStyle.GreenPale:CompassStyle.Pale,
+                Outline=i==1?CompassStyle.GreenPale:CompassStyle.Pale, Margin=new Padding(0,1,0,4) };
+            var label=Caption(names[i],9,true);label.Location=new Point(8,8);row.Controls.Add(label);
+            scenarios[i]=Caption("—",10,true);scenarios[i].Dock=DockStyle.Right;scenarios[i].TextAlign=ContentAlignment.MiddleRight;scenarios[i].Padding=new Padding(0,6,9,0);
+            if(i==1)scenarios[i].ForeColor=Teal;
+            row.Controls.Add(scenarios[i]);content.Controls.Add(row,0,i+1);
+        }
+        var title=Caption("SZÁMÍTÁSI MÓDSZER",8.5f,true);title.Margin=new Padding(1,8,0,0);content.Controls.Add(title,0,4);
+        modelNote.AutoSize=false;modelNote.Dock=DockStyle.Fill;content.Controls.Add(modelNote,0,5);
+        panel.Controls.Add(content);
+        return panel;
     }
 
     private void BuildInput(TabPage page)
@@ -516,6 +602,7 @@ internal sealed class DesktopWindow : Form
         SetChoices(owners,new[]{new Pick("","Összes")}.Concat(available.Select(x=>new Pick(x,x))),owner);
         binding=false;
         FillCustomers();FillPipeline();FillSourceStatus();
+        sidebarStatus.Text=Json.Text(Source("sales"),"mode","Forrás beállítása szükséges");
     }
 
     private async Task FetchForecast()
@@ -529,18 +616,24 @@ internal sealed class DesktopWindow : Form
         string label=Json.Text(forecast,"label","Értékesítési előrejelzés");
         int count=IntValue(Json.Get(forecast,"count"),0);
         double? actual=At(Json.Items(forecast,"actual"),count-1), goal=At(Json.Items(forecast,"plan"),11), ending=Json.Number(Json.Get(forecast,"ending"));
-        headline.Text=label;
         var sales=Source("sales");
-        syncLine.Text=String.Format("FY {0}  ·  április–március  ·  {1}  ·  {2}",year,Json.Text(forecast,"source"),Json.Text(sales,"mode","Adatforrás beállítása"));
-        cards[0].Text=Format(actual,"db");cards[1].Text=Format(goal,"db");cards[2].Text=Format(ending,"db");
-        cards[2].ForeColor=Teal;
+        bool changed=hero.Headline!=label||hero.Subline.IndexOf("FY "+year+" ",StringComparison.Ordinal)<0;
+        hero.Headline=label;
+        hero.Subline=String.Format("FY {0}  ·  április {0} – március {1}  ·  {2}",year,year+1,Json.Text(forecast,"source"));
+        hero.Source=Json.Text(sales,"mode","Forrás beállítása");hero.Connected=Json.Flag(sales,"ok");
+        if(changed)hero.Animate();else hero.Invalidate();
         double? delta=ending-goal;
-        cards[3].Text=(delta>0?"+":"")+Format(delta,"db");
-        cards[3].ForeColor=delta.HasValue && delta.Value<0 ? Color.FromArgb(159,58,47) : Teal;
+        cards[0].Display(actual,count>0?Months[count-1]+" · "+count+" adatolt hónap":"Havi tényadat szükséges",Ink);
+        cards[1].Display(goal,Json.Get(forecast,"target")!=null?"Kézi éves cél":Json.Text(forecast,"source"),Ink);
+        cards[2].Display(ending,goal>0&&ending.HasValue?Format(100*ending.Value/goal.Value,"%")+" várható célteljesülés":"Üzleti év végi összesen",Teal);
+        cards[3].Display(delta,"Forecast és éves cél",delta<0?Color.FromArgb(161,61,53):Teal);
         chart.SetData(forecast);
-        chartNote.Text=String.Format("Óvatos {0}     ·     Alap {1}     ·     Erős {2}     ·     {3}{4}",
-            Format(At(Json.Items(forecast,"low"),11),"db"),Format(ending,"db"),Format(At(Json.Items(forecast,"high"),11),"db"),
-            Json.Flag(forecast,"seasonal")?"3 havi átlag + előző évi szezonalitás":"3 havi átlag",Json.Flag(forecast,"gap")?"     ·     Hiányzó tényhónap":"");
+        scenarios[0].Text=Format(At(Json.Items(forecast,"low"),11),"db");
+        scenarios[1].Text=Format(ending,"db");
+        scenarios[2].Text=Format(At(Json.Items(forecast,"high"),11),"db");
+        modelNote.Text=String.Format("{0}\r\n±{1}% a hátralévő hónapokra.",Json.Flag(forecast,"seasonal")?
+            "A 3 havi átlag és az előző év mintája egyenlő súllyal számít.":"Gördülő átlag az utolsó legfeljebb három havi tényből.",spread);
+        chartNote.Text=Json.Flag(forecast,"gap")?"Hiányzó tényhónap. A forecast az utolsó folytonos tényadatból indul.":"Halmozott darabszám • Állj egy hónap fölé a tényleges és tervezett értékekhez.";
         inputNote.Text=String.Format("{0}  ·  FY {1}    |    Az adott hónap kézi ténye elsőbbséget kap az Excel-értékkel szemben.",label,year);
         newYear.Text=year.ToString();
         target.Text=Json.Number(Json.Get(forecast,"target")).HasValue ? Format(Json.Number(Json.Get(forecast,"target"))) : "";
@@ -811,6 +904,13 @@ internal sealed class DesktopWindow : Form
         string version=Json.Text(check,"latest");
         string notes=Json.Text(check,"notes");
         if(notes.Length>520)notes=notes.Substring(0,520)+"…";
+        if(Launcher.ManagedInstall)
+        {
+            if(MessageBox.Show(this,"Elérhető a(z) "+version+" verzió.\r\n\r\n"+notes+"\r\n\r\nMegnyitod a Windows MSI-kiadás oldalát?",
+                "Programfrissítés",MessageBoxButtons.YesNo,MessageBoxIcon.Information)==DialogResult.Yes)
+                Launcher.OpenWeb("https://github.com/Csomaika/SMC-Compass/releases/tag/v"+version);
+            return;
+        }
         if(MessageBox.Show(this,"Elérhető a(z) "+version+" verzió.\r\n\r\n"+notes+"\r\n\r\nLetöltöd és újraindítod az alkalmazást?",
             "Programfrissítés",MessageBoxButtons.YesNo,MessageBoxIcon.Information)!=DialogResult.Yes)return;
         foot.Text="Programfrissítés letöltése és ellenőrzése…";

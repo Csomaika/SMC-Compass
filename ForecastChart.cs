@@ -128,14 +128,19 @@ internal sealed class ForecastChart : Control
                 string name=DesktopWindow.Months[i];
                 g.DrawString(name,small,dim,X(i)-g.MeasureString(name,small).Width/2,bottom+7);
             }
+            var reveal=g.Save();
+            double ease=1-Math.Pow(1-progress,3);
+            g.SetClip(new RectangleF(LeftEdge-5,top-5,Math.Max(4,(float)((RightEdge-LeftEdge+11)*ease)),bottom-top+11));
             var shade=new List<PointF>();
             for(int i=0;i<12;i++){var item=Value("high",i);if(item.HasValue)shade.Add(new PointF(X(i),y(item.Value)));}
             for(int i=11;i>=0;i--){var item=Value("low",i);if(item.HasValue)shade.Add(new PointF(X(i),y(item.Value)));}
-            if(shade.Count>=4)using(var tint=new SolidBrush(Color.FromArgb((int)(150*progress),bandColor)))g.FillPolygon(tint,shade.ToArray());
+            if(shade.Count>=4)using(var tint=new LinearGradientBrush(new RectangleF(LeftEdge,top,RightEdge-LeftEdge,bottom-top),
+                Color.FromArgb(175,bandColor),Color.FromArgb(56,bandColor),LinearGradientMode.Vertical))g.FillPolygon(tint,shade.ToArray());
             Curve(g,"prev",previousColor,1.6f,DashStyle.Dot,y,false);
             Curve(g,"plan",planColor,2,DashStyle.Dash,y,false);
             Curve(g,"forecast",forecastColor,2.5f,DashStyle.Dash,y,false);
             Curve(g,"actual",actualColor,3,DashStyle.Solid,y,true);
+            g.Restore(reveal);
             if(hover>=0)using(var line=new Pen(Color.FromArgb(130,DesktopWindow.Blue),1){DashStyle=DashStyle.Dash})g.DrawLine(line,X(hover),top,X(hover),bottom);
             var legend=new[]{"Tény","Terv","Forecast","Előző FY","Forgatókönyv-tartomány"};
             var colors=new[]{actualColor,planColor,forecastColor,previousColor,bandColor};

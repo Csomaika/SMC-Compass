@@ -22,8 +22,18 @@ jobs:
         with:
           python-version: '3.12'
           architecture: x64
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
       - name: Build Windows package
-        run: python build_windows.py --output dist/SMC-Compass-Windows.zip
+        shell: pwsh
+        run: |
+          python build_windows.py --output dist/SMC-Compass-Windows.zip
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet tool install --tool-path dist/wix wix --version 5.0.2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python build_msi.py --payload dist/SMC-Compass-Windows.zip --output dist/SMC-Compass-Setup.msi --wix dist/wix/wix.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify Windows package
         shell: pwsh
         run: |
@@ -32,6 +42,35 @@ jobs:
           $env:COMPASS_DATA = Join-Path $env:RUNNER_TEMP 'compass-smoke'
           $check = Start-Process -FilePath $exe -ArgumentList '--self-test' -WindowStyle Hidden -Wait -PassThru
           if ($check.ExitCode -ne 0) { throw "Compass smoke test failed: $($check.ExitCode)" }
+      - name: Verify install and uninstall
+        shell: pwsh
+        run: |
+          $setup = (Resolve-Path -LiteralPath dist/SMC-Compass-Setup.msi).Path
+          $log = Join-Path $env:RUNNER_TEMP 'compass-install.log'
+          $install = Start-Process -FilePath msiexec.exe -ArgumentList @('/i', ('"{0}"' -f $setup), '/qn', '/norestart', '/l*v', ('"{0}"' -f $log)) -WindowStyle Hidden -Wait -PassThru
+          if ($install.ExitCode -ne 0) { Get-Content $log -Tail 70; throw "Setup failed: $($install.ExitCode)" }
+          $reg = Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where-Object DisplayName -eq 'SMC Compass'
+          $version = (Get-Content -Raw version.txt).Trim()
+          $root = Join-Path $env:ProgramFiles 'SMC Compass'
+          $exe = Join-Path $root 'SMC-Compass.exe'
+          $shortcut = Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'SMC Compass.lnk'
+          if ($reg.DisplayVersion -ne $version -or !(Test-Path -LiteralPath $shortcut)) { throw 'Install registration missing' }
+          $env:COMPASS_DATA = Join-Path $env:RUNNER_TEMP 'compass-installed-smoke'
+          $env:COMPASS_TEST_CAPTURE = Join-Path (Get-Location) 'dist\SMC-Compass-Preview.png'
+          $check = Start-Process -FilePath $exe -ArgumentList '--self-test' -WindowStyle Hidden -Wait -PassThru
+          if ($check.ExitCode -ne 0) {
+            Get-Content (Join-Path $env:COMPASS_DATA 'smoke-error.txt') -ErrorAction SilentlyContinue
+            throw "Installed program smoke test failed: $($check.ExitCode)"
+          }
+          $remove = Start-Process -FilePath msiexec.exe -ArgumentList @('/x', ('"{0}"' -f $setup), '/qn', '/norestart') -WindowStyle Hidden -Wait -PassThru
+          if ($remove.ExitCode -ne 0 -or (Test-Path -LiteralPath $exe) -or (Test-Path -LiteralPath $reg.PSPath) -or (Test-Path -LiteralPath $shortcut)) { throw 'Uninstall did not clear the installation' }
+      - name: Package and preview for verification
+        uses: actions/upload-artifact@v4
+        with:
+          name: SMC-Compass-Windows-verified
+          path: |
+            dist/SMC-Compass-Setup.msi
+            dist/SMC-Compass-Preview.png
       - name: Publish release
         shell: pwsh
         env:
@@ -42,5 +81,5 @@ jobs:
           $tag = "v$version"
           gh release view $tag --repo $env:GITHUB_REPOSITORY 2>$null
           if ($LASTEXITCODE -eq 0) { exit 0 }
-          gh release create $tag dist/SMC-Compass-Windows.zip --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "SMC Compass $version" --notes-file CHANGELOG.md --latest
+          gh release create $tag dist/SMC-Compass-Setup.msi dist/SMC-Compass-Windows.zip --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "SMC Compass $version" --notes-file CHANGELOG.md --latest
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

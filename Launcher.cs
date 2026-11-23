@@ -29,6 +29,8 @@ internal static class Launcher
         get { return File.ReadAllText(Path.Combine(Folder, "version.txt")).Trim(); }
     }
 
+    internal static bool ManagedInstall { get { return File.Exists(Path.Combine(Folder,"msi-install.txt")); } }
+
     internal static void StartProgram(string exe)
     {
         Process.Start(new ProcessStartInfo(exe) { WorkingDirectory = Path.GetDirectoryName(exe), UseShellExecute = true });
@@ -44,6 +46,7 @@ internal static class Launcher
 
     private static bool ForwardToInstalledVersion()
     {
+        if(ManagedInstall)return false;
         string pointer = Path.Combine(DataFolder, "active-version.txt");
         if (!File.Exists(pointer)) return false;
         string version = File.ReadAllText(pointer).Trim();
@@ -79,7 +82,7 @@ internal static class Launcher
                             var state = worker.Call("state", null);
                             var forecast = worker.Call("forecast", Json.Fields("year", 2026));
                             if (Json.Get(state, "config") == null || Json.Items(forecast, "actual").Count != 12) return 3;
-                            using (var window = new DesktopWindow(worker)) window.RunLayoutTest(state, forecast);
+                            using (var window = new DesktopWindow(worker,true)) window.RunLayoutTest(state, forecast);
                             return 0;
                         }
                         Application.Run(new DesktopWindow(worker));

@@ -7,5 +7,7 @@ compass-*.tmp
 *.xlsm
 *.zip
 *.exe
+*.msi
+*.wixpdb
 runtime/
 dist/

@@ -1,5 +1,11 @@
 # SMC Compass · verziónapló
 
+## 1.2.0 · Telepítő és új műszerfal
+
+- Windows Installer MSI, Start menüvel és a Windows Telepített alkalmazások listájából indítható eltávolítással.
+- Sötét oldalsáv, gradient fejléc, animált KPI-számok és kirajzolódó előrejelzési grafikon. A három forgatókönyv külön kártyán látszik.
+- Telepített kiadásnál a programfrissítés az új Windows MSI-kiadást mutatja meg. A korábbi munkaterület adatai megmaradnak.
+
 ## 1.1.0 · Windows Desktop
 
 - Natív Windows-ablak, böngésző és helyi webszerver nélkül.

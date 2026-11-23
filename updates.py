@@ -107,6 +107,8 @@ def extract(content, stage, expected):
 
 
 def install(expected):
+    if (core.HERE.parent/'msi-install.txt').is_file():
+        raise ValueError('A telepített Compass frissítéséhez a Windows MSI-kiadást használd.')
     expected = version(expected)
     entry = release()
     if not entry or entry['version']!=expected or tuple(map(int,expected.split('.')))<=tuple(map(int,current().split('.'))):

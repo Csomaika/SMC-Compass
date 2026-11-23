@@ -1,0 +1,232 @@
+using System;
+using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Windows.Forms;
+
+internal static class CompassStyle
+{
+    internal static readonly Color Navy=Color.FromArgb(8,30,55), Border=Color.FromArgb(220,230,241),
+        Pale=Color.FromArgb(234,243,252), GreenPale=Color.FromArgb(229,247,242);
+
+    internal static GraphicsPath Round(RectangleF box,float radius)
+    {
+        var path=new GraphicsPath();
+        float d=Math.Min(radius*2,Math.Min(box.Width,box.Height));
+        path.AddArc(box.X,box.Y,d,d,180,90);
+        path.AddArc(box.Right-d,box.Y,d,d,270,90);
+        path.AddArc(box.Right-d,box.Bottom-d,d,d,0,90);
+        path.AddArc(box.X,box.Bottom-d,d,d,90,90);
+        path.CloseFigure();
+        return path;
+    }
+
+    internal static Color Mix(Color from,Color to,double fraction)
+    {
+        return Color.FromArgb((int)(from.R+(to.R-from.R)*fraction),(int)(from.G+(to.G-from.G)*fraction),(int)(from.B+(to.B-from.B)*fraction));
+    }
+}
+
+internal class CardPanel : Panel
+{
+    internal Color Fill=Color.White;
+    internal Color Outline=CompassStyle.Border;
+    internal int Radius=13;
+
+    internal CardPanel()
+    {
+        BackColor=Color.Transparent;
+        SetStyle(ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.ResizeRedraw,true);
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        base.OnPaintBackground(e);
+        if(Width<3||Height<3)return;
+        e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;
+        using(var shape=CompassStyle.Round(new RectangleF(.6f,.6f,Width-1.3f,Height-1.3f),Radius))
+        using(var brush=new SolidBrush(Fill))
+        using(var pen=new Pen(Outline))
+        {
+            e.Graphics.FillPath(brush,shape);
+            e.Graphics.DrawPath(pen,shape);
+        }
+    }
+}
+
+internal sealed class HeroPanel : Panel
+{
+    private readonly Timer reveal=new Timer{Interval=23};
+    private readonly Stopwatch watch=new Stopwatch();
+    private double light=1;
+    internal string Headline="Értékesítési előrejelzés", Subline="", Source="Adatforrás betöltése";
+    internal bool Connected;
+
+    internal HeroPanel()
+    {
+        BackColor=Color.Transparent;
+        DoubleBuffered=true;
+        ResizeRedraw=true;
+        reveal.Tick+=(s,e)=>{light=Math.Min(1,watch.Elapsed.TotalMilliseconds/440);if(light>=1)reveal.Stop();Invalidate();};
+    }
+
+    internal void Animate()
+    {
+        if(!SystemInformation.IsMenuAnimationEnabled||!Visible||!IsHandleCreated){light=1;Invalidate();return;}
+        light=0;watch.Restart();reveal.Start();
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        if(Width<5||Height<5)return;
+        var g=e.Graphics;
+        g.SmoothingMode=SmoothingMode.AntiAlias;
+        using(var shape=CompassStyle.Round(new RectangleF(0,0,Width-1,Height-1),16))
+        using(var gradient=new LinearGradientBrush(ClientRectangle,Color.FromArgb(12,49,88),Color.FromArgb(8,113,181),11))
+        {
+            g.FillPath(gradient,shape);
+            var clip=g.Save();g.SetClip(shape);
+            var center=new PointF(Width-107,-18);
+            float offset=(float)((1-light)*25);
+            for(int i=0;i<6;i++)
+            {
+                float radius=57+i*24+offset;
+                using(var pen=new Pen(Color.FromArgb(22+i*2,214,239,255),1))g.DrawEllipse(pen,center.X-radius,center.Y-radius,radius*2,radius*2);
+            }
+            g.Restore(clip);
+        }
+        using(var small=new Font("Segoe UI",10,FontStyle.Bold))
+        using(var heading=new Font("Segoe UI",27,FontStyle.Bold))
+        using(var subtitle=new Font("Segoe UI",10.5f))
+        {
+            Draw(g,"ÉRTÉKESÍTÉSI ELŐREJELZÉS",small,Color.FromArgb(180,220,251),new Rectangle(23,17,Width-46,24));
+            Draw(g,Headline,heading,Color.White,new Rectangle(21,41,Width-42,48));
+            Draw(g,Subline,subtitle,Color.FromArgb(218,240,255),new Rectangle(23,92,Math.Max(75,Width-225),29));
+            int length=Math.Min(175,TextRenderer.MeasureText(Source,small).Width+28);
+            var pill=new RectangleF(Width-length-18,94,length,25);
+            using(var outline=CompassStyle.Round(pill,12))
+            using(var tint=new SolidBrush(Color.FromArgb(88,4,40,71)))
+            using(var pen=new Pen(Color.FromArgb(85,212,238,255)))
+            using(var dot=new SolidBrush(Connected?Color.FromArgb(71,221,182):Color.FromArgb(255,192,103)))
+            {
+                g.FillPath(tint,outline);g.DrawPath(pen,outline);g.FillEllipse(dot,pill.X+8,pill.Y+9,7,7);
+            }
+            Draw(g,Source,small,Color.White,new Rectangle((int)pill.X+19,(int)pill.Y,Math.Max(4,(int)pill.Width-23),25));
+        }
+    }
+
+    internal static void Draw(Graphics g,string text,Font font,Color color,Rectangle rect)
+    {
+        TextRenderer.DrawText(g,text??"",font,rect,color,TextFormatFlags.EndEllipsis|TextFormatFlags.VerticalCenter|TextFormatFlags.NoPadding|TextFormatFlags.SingleLine);
+    }
+
+    protected override void Dispose(bool disposing){if(disposing)reveal.Dispose();base.Dispose(disposing);}
+}
+
+internal sealed class KpiCard : Control
+{
+    private readonly Timer timer=new Timer {Interval=23};
+    private readonly Stopwatch clock=new Stopwatch();
+    private readonly string label,symbol;
+    private double from;
+    private double? value;
+    private string note="";
+    private Color accent=DesktopWindow.Blue;
+    private double progress=1;
+
+    internal KpiCard(string label,string symbol)
+    {
+        this.label=label;this.symbol=symbol;
+        AccessibleName=label;
+        BackColor=DesktopWindow.Cloud;
+        DoubleBuffered=true;ResizeRedraw=true;
+        timer.Tick+=(s,e)=>{progress=Math.Min(1,clock.Elapsed.TotalMilliseconds/430);if(progress>=1)timer.Stop();Invalidate();};
+    }
+
+    internal void Display(double? amount,string description,Color color)
+    {
+        bool changed=amount!=value;
+        from=value??0;value=amount;note=description;accent=color;
+        AccessibleDescription=DesktopWindow.Format(value,"db")+" · "+note;
+        if(changed&&IsHandleCreated&&Visible&&SystemInformation.IsMenuAnimationEnabled){progress=0;clock.Restart();timer.Start();}
+        else if(changed){progress=1;timer.Stop();}
+        Invalidate();
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        if(Width<12||Height<12)return;
+        var g=e.Graphics;g.SmoothingMode=SmoothingMode.AntiAlias;
+        using(var shape=CompassStyle.Round(new RectangleF(.6f,.6f,Width-1.3f,Height-1.3f),12))
+        using(var pen=new Pen(CompassStyle.Border))
+        {
+            g.FillPath(Brushes.White,shape);g.DrawPath(pen,shape);
+        }
+        using(var tag=CompassStyle.Round(new RectangleF(Width-42,12,29,29),8))
+        using(var color=new SolidBrush(CompassStyle.Pale))g.FillPath(color,tag);
+        using(var caption=new Font("Segoe UI",9,FontStyle.Bold))
+        using(var figures=new Font("Segoe UI",23,FontStyle.Bold))
+        using(var detail=new Font("Segoe UI",8.5f))
+        {
+            HeroPanel.Draw(g,label.ToUpperInvariant(),caption,DesktopWindow.Muted,new Rectangle(13,10,Math.Max(1,Width-57),23));
+            HeroPanel.Draw(g,symbol,caption,DesktopWindow.Blue,new Rectangle(Width-34,13,22,25));
+            double gain=1-Math.Pow(1-progress,3);
+            string result=value.HasValue?DesktopWindow.Format(Math.Round(from+(value.Value-from)*gain),"db"):"—";
+            if(label=="Eltérés a céltól"&&value>0)result="+"+result;
+            HeroPanel.Draw(g,result,figures,accent,new Rectangle(12,35,Width-25,42));
+            HeroPanel.Draw(g,note,detail,DesktopWindow.Muted,new Rectangle(13,74,Width-26,23));
+        }
+    }
+
+    protected override void Dispose(bool disposing){if(disposing)timer.Dispose();base.Dispose(disposing);}
+}
+
+internal sealed class NavButton : Button
+{
+    internal bool Active;
+    private readonly string mark;
+    private bool hot;
+
+    internal NavButton(string label,string mark)
+    {
+        Text=label;this.mark=mark; AccessibleName=label;
+        Width=195;Height=45;FlatStyle=FlatStyle.Flat;FlatAppearance.BorderSize=0;
+        ForeColor=Color.White;BackColor=CompassStyle.Navy;
+        Font=new Font("Segoe UI",10,FontStyle.Bold);
+        Cursor=Cursors.Hand;
+        DoubleBuffered=true;
+    }
+
+    protected override void OnMouseEnter(EventArgs e){base.OnMouseEnter(e);hot=true;Invalidate();}
+    protected override void OnMouseLeave(EventArgs e){base.OnMouseLeave(e);hot=false;Invalidate();}
+    protected override void OnGotFocus(EventArgs e){base.OnGotFocus(e);Invalidate();}
+    protected override void OnLostFocus(EventArgs e){base.OnLostFocus(e);Invalidate();}
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g=e.Graphics;g.SmoothingMode=SmoothingMode.AntiAlias;g.Clear(CompassStyle.Navy);
+        if(Active||hot||Focused)
+        {
+            using(var frame=CompassStyle.Round(new RectangleF(0,1,Width-1,Height-2),8))
+            using(var fill=new SolidBrush(Active?Color.FromArgb(20,64,102):Color.FromArgb(20,51,80)))g.FillPath(fill,frame);
+        }
+        if(Active)using(var glow=new Pen(Color.FromArgb(86,172,252),3))g.DrawLine(glow,2,9,2,Height-9);
+        Color text=Active||hot?Color.White:Color.FromArgb(184,207,230);
+        HeroPanel.Draw(g,mark,Font,Color.FromArgb(139,195,245),new Rectangle(13,1,24,Height-2));
+        HeroPanel.Draw(g,Text,Font,text,new Rectangle(42,1,Width-48,Height-2));
+    }
+}
+
+internal sealed class NativePages : TabControl
+{
+    internal NativePages(){Dock=DockStyle.Fill;Appearance=TabAppearance.FlatButtons;ItemSize=new Size(0,1);SizeMode=TabSizeMode.Fixed;TabStop=false;}
+    public override Rectangle DisplayRectangle { get { return new Rectangle(0,0,ClientSize.Width,ClientSize.Height); } }
+    protected override void WndProc(ref Message m)
+    {
+        const int AdjustRect=0x1328;
+        if(m.Msg==AdjustRect&&!DesignMode){m.Result=(IntPtr)1;return;}
+        base.WndProc(ref m);
+    }
+}

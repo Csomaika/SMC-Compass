@@ -4,13 +4,13 @@ Natív, 64 bites Windows-alkalmazás PSD sales munkához. Havi forecast, kézi t
 
 ## Indítás
 
-1. Bontsd ki a teljes ZIP-et egy mappába.
-2. Indítsd el az `SMC-Compass.exe` fájlt. A Windows-ablak közvetlenül megnyílik.
-3. A **Források** fülön látható az utolsó sikeres import és a forrás típusa. Az **Adatfrissítés** a beállított adatforrásokat frissíti.
+1. Telepítsd az `SMC-Compass-Setup.msi` csomagot Windows Installerrel. Az alkalmazás programfájljai a Program Files mappába kerülnek.
+2. Keresd meg az **SMC Compass** alkalmazást a Start menüben.
+3. A **Források** fülön látható az utolsó sikeres import és a forrás típusa. Az **Adatfrissítés** a beállított adatforrásokat frissíti. Az alkalmazás a Windows **Telepített alkalmazások** listájából távolítható el.
 
 ## Programfrissítés és verziónapló
 
-A **Programfrissítés** gomb ellenőrzi a `Csomaika/SMC-Compass` legfrissebb nyilvános GitHub-kiadását. Új verziónál megmutatja a kiadás leírását, majd jóváhagyás után ellenőrzi a ZIP SHA-256 lenyomatát, külön verziómappába telepíti és megnyitja az új verziót. A régi indító ezután a telepített új verziót indítja. A helyi beállítások és adatok a felhasználói adatmappában maradnak. A **Verziónapló** fülön a telepített verzió és a kiadástörténet olvasható.
+A **Programfrissítés** gomb ellenőrzi a `Csomaika/SMC-Compass` legfrissebb nyilvános GitHub-kiadását. Az MSI-vel telepített alkalmazás megmutatja az új kiadást és megnyithatja az MSI-kiadás oldalát. A hordozható változat frissítésnél ellenőrzi a ZIP SHA-256 lenyomatát és külön verziómappát használ. A helyi beállítások és adatok a felhasználói adatmappában maradnak. A **Verziónapló** fülön a telepített verzió és a kiadástörténet olvasható.
 
 ## Sales és SpeedUp
 
@@ -33,4 +33,4 @@ A **Programfrissítés** gomb ellenőrzi a `Csomaika/SMC-Compass` legfrissebb ny
 
 A beállítások, importált adatok, kézi számok és vevőértékelések a `%LOCALAPPDATA%\SMC Compass\compass.json` fájlban vannak. Mentéshez az alkalmazás leállítása után ezt az egy fájlt másold a megfelelő céges helyre. Az állomány a munkafüzetekből és a Sugarból átvett üzleti adatokat tartalmazhat.
 
-Hordozható csomag készítéséhez futtasd a `python build_windows.py` parancsot 64 bites CPython 3.12-vel Windowson. Az alkalmazás WinForms-szal fordul, az Excel-kezelő háttérfolyamat a csomagolt CPythont használja. A környezetspecifikus `compass-profile.json` privát buildhez a `--profile` kapcsolóval adható meg. Kiadáshoz emeld a `version.txt` verziószámát és frissítsd a `CHANGELOG.md` fájlt. A nyilvános kiadást a GitHub Actions munkafolyamat csomagolja.
+Buildhez futtasd a `python build_windows.py` parancsot 64 bites CPython 3.12-vel Windowson. Natív MSI készítéséhez WiX 5 alatt futtasd a `python build_msi.py --payload dist/SMC-Compass-Windows.zip --output dist/SMC-Compass-Setup.msi` parancsot. Az alkalmazás WinForms-szal fordul, az Excel-kezelő háttérfolyamat a csomagolt CPythont használja. A környezetspecifikus `compass-profile.json` privát buildhez a `--profile` kapcsolóval adható meg. Kiadáshoz emeld a `version.txt` verziószámát és frissítsd a `CHANGELOG.md` fájlt. A nyilvános telepítőt és a frissítőcsomagot a GitHub Actions munkafolyamat készíti, céges környezetben az aláíráshoz és terítéshez a szervezet saját jóváhagyása használható.
