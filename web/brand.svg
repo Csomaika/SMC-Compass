@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="SMC Compass iránytű">
+  <rect width="64" height="64" rx="14" fill="#0872ce"/>
+  <circle cx="32" cy="32" r="19" fill="none" stroke="#95d2ff" stroke-width="1.5"/>
+  <path d="M32 8v8m0 32v8M8 32h8m32 0h8" stroke="#b9e2ff" stroke-width="1.5"/>
+  <path d="m43 20-6 17-17 7 6-17 17-7Z" fill="#fff"/>
+  <path d="m20 44 12-12 5 5-17 7Z" fill="#69bcfb"/>
+</svg>
