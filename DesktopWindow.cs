@@ -666,6 +666,14 @@ internal sealed class DesktopWindow : Form
         modelNote.Text=String.Format("{0}\r\n±{1}% a hátralévő hónapokra.",Json.Flag(forecast,"seasonal")?
             "A 3 havi átlag és az előző év mintája egyenlő súllyal számít.":"Gördülő átlag az utolsó legfeljebb három havi tényből.",spread);
         chartNote.Text=Json.Flag(forecast,"gap")?"Hiányzó tényhónap. A forecast az utolsó folytonos tényadatból indul.":"Halmozott darabszám • Állj egy hónap fölé a tényleges és tervezett értékekhez.";
+        DateTimeOffset lastImport;
+        if(DateTimeOffset.TryParse(Json.Text(sales,"lastGood"),out lastImport))
+        {
+            string details=Json.Flag(forecast,"gap")?" · Hiányos havi adatsor":
+                count<12?" · "+Months[count]+": nincs feldolgozható tényadat":"";
+            chartNote.Text="Utolsó sikeres Sales-import: "+lastImport.LocalDateTime.ToString("MM.dd. HH:mm:ss",Hu)
+                +" · "+Json.Text(forecast,"source")+details;
+        }
         inputNote.Text=String.Format("{0}  ·  FY {1}    |    Az adott hónap kézi ténye elsőbbséget kap az Excel-értékkel szemben.",label,year);
         newYear.Text=year.ToString();
         target.Text=Json.Number(Json.Get(forecast,"target")).HasValue ? Format(Json.Number(Json.Get(forecast,"target"))) : "";
@@ -890,12 +898,16 @@ internal sealed class DesktopWindow : Form
         try
         {
             await SalesDownload.Fetch(this,Json.Text(start,"url"),Json.Text(start,"path"),!scheduled,()=>cancelBrowserSales);
+            foot.Text="Letöltve · a Sales-adatok beolvasása…";
+            var oldActual=Json.Items(forecast,"actual").ToArray();
             await worker.CallAsync("sales-download-finish");
             await RefreshState(!scheduled);
             await FetchForecast();
             int count=IntValue(Json.Get(forecast,"count"),0);
             string value=count>0?Months[count-1]+" · "+String.Format(Hu,"{0:N0} db",At(Json.Items(forecast,"actual"),count-1)):"nincs tényadat";
-            foot.Text="Sales beolvasva "+DateTime.Now.ToString("T",Hu)+" · "+Json.Text(forecast,"source")+" · "+value;
+            bool unchanged=oldActual.SequenceEqual(Json.Items(forecast,"actual"));
+            foot.Text="Sales beolvasva "+DateTime.Now.ToString("T",Hu)+" · "+Json.Text(forecast,"source")+" · "+value
+                +(unchanged?" · A kijelzett mutató tényadatai változatlanok.":"");
         }
         finally
         {

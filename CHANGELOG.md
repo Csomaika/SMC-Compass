@@ -1,5 +1,10 @@
 # SMC Compass · verziónapló
 
+## 1.2.6 · Sales-frissítés bejelentkezés után
+
+- Ha a SharePoint a letöltés helyett a webhely másik oldalára visz, a Compass egyszer újrakéri a munkafüzetet. A bejelentkezési ablakból kézzel is folytatható a letöltés.
+- A grafikon alatt látható az utolsó sikeres import ideje és az első hiányzó tényhónap. Frissítéskor az állapotsor jelzi, ha a kiválasztott mutató tényadatai változatlanok.
+
 ## 1.2.5 · Sales-import a Compasson belül
 
 - A SharePoint-frissítés egy saját ideiglenes fájlba tölt, menti a beolvasott adatokat, majd eltávolítja a példányt. Az állapotsor jelzi az import idejét és a kijelzett utolsó tényhónapot.
