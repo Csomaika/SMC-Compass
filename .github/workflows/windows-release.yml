@@ -44,7 +44,7 @@ jobs:
           $env:COMPASS_DATA = Join-Path $env:RUNNER_TEMP 'compass-smoke'
           $check = Start-Process -FilePath $exe -ArgumentList '--self-test' -WindowStyle Hidden -Wait -PassThru
           if ($check.ExitCode -ne 0) { throw "Compass smoke test failed: $($check.ExitCode)" }
-      - name: Verify post-login Sales download in packaged WebView2
+      - name: Verify redirected download in packaged WebView2
         shell: pwsh
         run: python test_sales_navigation.py dist/check/SMC-Compass
       - name: Verify upgrade and uninstall

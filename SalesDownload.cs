@@ -21,6 +21,7 @@ internal static class SalesDownload
             var source=new Uri(url);
             bool retried=false;
             // Create a window handle without displaying or activating the sign-in window.
+            var parentHandle=login.Handle;
             var handle=view.Handle;
             await view.EnsureCoreWebView2Async(env);
             var web=view.CoreWebView2;
@@ -55,7 +56,7 @@ internal static class SalesDownload
                 {
                     // After sign-in SharePoint can return its home page instead of the attachment.
                     retried=true;
-                    login.BeginInvoke(new Action(()=>{if(active==null&&!done.Task.IsCompleted)web.Navigate(url);}));
+                    owner.BeginInvoke(new Action(()=>{if(active==null&&!done.Task.IsCompleted)web.Navigate(url);}));
                     return;
                 }
                 if(interactive && !login.Visible)login.Show(owner);
@@ -66,8 +67,21 @@ internal static class SalesDownload
             {
                 web.Navigate(url);
                 var deadline=DateTime.UtcNow.AddMinutes(interactive?5:2);
+                string previousPage=null;
+                DateTime pageSince=DateTime.UtcNow;
                 while(!done.Task.IsCompleted)
                 {
+                    string current=web.Source;
+                    if(current!=previousPage){previousPage=current;pageSince=DateTime.UtcNow;}
+                    Uri stable;
+                    if(!retried && active==null && (DateTime.UtcNow-pageSince).TotalSeconds>=2
+                        && Uri.TryCreate(current,UriKind.Absolute,out stable)
+                        && stable.Scheme==source.Scheme && stable.Authority==source.Authority
+                        && stable.AbsolutePath!=source.AbsolutePath)
+                    {
+                        retried=true;
+                        web.Navigate(url);
+                    }
                     if(closed||canceled())throw new OperationCanceledException("A Sales-frissítés megszakítva.");
                     if(DateTime.UtcNow>=deadline)throw new TimeoutException("Nem érkezett meg a Sales Excel. A Források fülön a külső böngészővel is próbálkozhatsz.");
                     await Task.WhenAny(done.Task,Task.Delay(350));

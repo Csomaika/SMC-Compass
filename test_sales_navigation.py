@@ -47,6 +47,7 @@ using System.Windows.Forms;
 internal class Launcher {
     internal static string DataFolder = Environment.GetEnvironmentVariable("COMPASS_DATA");
     [STAThread] static int Main(string[] args) {
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
         using(var form = new Form()) {
             form.Shown += async (s,e) => {
                 try { await SalesDownload.Fetch(form,args[0],args[1],false,()=>false); }
