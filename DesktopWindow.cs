@@ -23,6 +23,7 @@ internal sealed class DesktopWindow : Form
     private Dictionary<string,object> state = Json.Fields();
     private Dictionary<string,object> forecast = Json.Fields();
     private bool busy, binding, browserSalesActive, cancelBrowserSales;
+    private bool browserNamePromptDismissed;
     private int year;
     private string metric = "ofsoldelectricactuators", method = "blend", boxFilter = "";
     private int spread = 10;
@@ -164,8 +165,8 @@ internal sealed class DesktopWindow : Form
         FillSettings();
         FillState();
         await FetchForecast();
-        await RefreshData(false,false);
         timer.Start();
+        await RefreshData(false,false);
     }
 
     private async void Run(Func<Task> work,bool quiet=false)
@@ -215,7 +216,7 @@ internal sealed class DesktopWindow : Form
         refreshBtn.Click += (s,e) => Run(() => RefreshData(true,true));
         browserSalesBtn.Click += (s,e) => {
             if(browserSalesActive)cancelBrowserSales=true;
-            else Run(ImportSalesFromBrowser);
+            else Run(() => ImportSalesFromBrowser(false));
         };
         actions.Controls.Add(updateBtn);
         actions.Controls.Add(exportBtn);
@@ -532,7 +533,7 @@ internal sealed class DesktopWindow : Form
         var mode=Picker();mode.Width=360;
         var choices = new List<Pick>{new Pick("","Alapértelmezett mód"),new Pick("local","Helyi / OneDrive-szinkronizált fájl"),
             new Pick("sharepoint","Közvetlen SharePoint (Entra)"),new Pick("manual","Kézi Excel-import")};
-        if(key=="salesSource")choices.Add(new Pick("browser","SharePoint · böngészős letöltés"));
+        if(key=="salesSource")choices.Add(new Pick("browser","SharePoint · időzített böngészős letöltés"));
         SetChoices(mode,choices,"");
         Setting(list,label,key,mode);
     }
@@ -845,8 +846,8 @@ internal sealed class DesktopWindow : Form
         var data=ReadSettings();await worker.CallAsync("config",data);
         year=IntValue(Json.Get(data,"fiscal"),year);
         await RefreshState(false);
+        foot.Text="A forrásbeállítások mentve.";
         await RefreshData(true,false);
-        foot.Text="A forrásbeállítások mentve. A frissítés részletei a Források fülön láthatók.";
     }
 
     private string SourceMode(string kind)
@@ -866,12 +867,17 @@ internal sealed class DesktopWindow : Form
         if(!localOnly)nextRefresh=DateTime.UtcNow.AddMinutes(IntValue(Json.Get(Config,"minutes"),10));
         var result=await worker.CallAsync("refresh",Json.Fields("force",forced,"localOnly",localOnly));
         if(forced||Json.Flag(result,"changed")) {await RefreshState(false);await FetchForecast();}
+        if(Json.Flag(result,"browserSales"))
+        {
+            try { await ImportSalesFromBrowser(!forced); }
+            finally { nextRefresh=DateTime.UtcNow.AddMinutes(IntValue(Json.Get(Config,"minutes"),10)); }
+            return;
+        }
         if(announce)foot.Text=String.Join("  ·  ",new[]{"sales","buyers"}.Select(kind=>
-            (kind=="sales"?"Sales: ":"SpeedUp: ")+(SourceMode(kind)=="browser"?"a böngészős frissítés gombbal tölthető":
-            SourceMode(kind)=="manual"?"kézi import":Json.Flag(Source(kind),"ok")?"frissítve":"korábbi adatok")));
+            (kind=="sales"?"Sales: ":"SpeedUp: ")+(SourceMode(kind)=="manual"?"kézi import":Json.Flag(Source(kind),"ok")?"frissítve":"korábbi adatok")));
     }
 
-    private async Task ImportSalesFromBrowser()
+    private async Task ImportSalesFromBrowser(bool scheduled)
     {
         browserSalesActive=true;
         cancelBrowserSales=false;
@@ -881,8 +887,16 @@ internal sealed class DesktopWindow : Form
             var start=await worker.CallAsync("browser-sales-start",options);
             if(Json.Flag(start,"needsName"))
             {
+                if(scheduled&&browserNamePromptDismissed)
+                {
+                    foot.Text="Az automatikus frissítéshez add meg a Sales-fájl nevét a Források fülön.";
+                    return;
+                }
                 string filename=AskSalesDownloadName();
-                if(String.IsNullOrWhiteSpace(filename)){foot.Text="Böngészős frissítés megszakítva.";return;}
+                browserNamePromptDismissed=String.IsNullOrWhiteSpace(filename);
+                if(browserNamePromptDismissed){foot.Text="Böngészős frissítés megszakítva.";return;}
+                await worker.CallAsync("config",Json.Fields("salesDownloadName",filename));
+                settings["salesDownloadName"].Text=filename;
                 options["filename"]=filename;
                 start=await worker.CallAsync("browser-sales-start",options);
             }
@@ -899,12 +913,15 @@ internal sealed class DesktopWindow : Form
                 string status=Json.Text(result,"result");
                 if(status=="imported")
                 {
-                    await RefreshState(true);await FetchForecast();
+                    await RefreshState(!scheduled);await FetchForecast();
                     foot.Text="Sales frissítve SharePointról: "+Json.Text(result,"name");
                     return;
                 }
                 if(status=="timeout")
+                {
+                    await RefreshState(false);
                     throw new InvalidOperationException("Nem érkezett új Sales Excel. Ha a böngésző belépést kért, fejezd be, majd próbáld újra. Eltérő letöltési mappát a Források fülön adhatsz meg.");
+                }
             }
             await worker.CallAsync("browser-sales-cancel");
             foot.Text="Böngészős frissítés megszakítva.";

@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -45,6 +46,21 @@ class WorkbookRefreshTest(unittest.TestCase):
                 self.assertEqual(app.scenario(2026, app.SALES_KEY)['actual'][7],1500)
                 self.assertNotIn('buyers',state['status'])
                 http.assert_not_called()
+
+    def test_startup_and_periodic_refresh_use_inherited_sharepoint_url(self):
+        url = 'https://contoso.sharepoint.com/sites/Sales/_layouts/15/Doc2.aspx?sourcedoc={12345678-1234-1234-1234-123456789abc}'
+        with tempfile.TemporaryDirectory() as temp:
+            file = Path(temp) / 'compass.json'
+            for source, path, should_download in [('', '', True), ('browser', '', True),
+                                                   ('manual', '', False), ('local', '', False),
+                                                   ('', 'Sales.xlsx', False)]:
+                with self.subTest(source=source, path=path):
+                    file.write_text(json.dumps({'config': {'source':'local','salesSource':source,
+                                    'salesUrl':url,'salesPath':path}}), encoding='utf-8')
+                    with patch.multiple(app, FILE=file, STATE={}), patch.object(app,'refresh',return_value=False):
+                        app.load()
+                        self.assertEqual(desktop.dispatch('refresh', {})['browserSales'],should_download)
+                        self.assertFalse(desktop.dispatch('refresh', {'localOnly':True})['browserSales'])
 
     def test_browser_sales_imports_only_the_new_download(self):
         with tempfile.TemporaryDirectory() as folder:

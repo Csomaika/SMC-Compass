@@ -62,7 +62,12 @@ def load():
         if not isinstance(stored.get('config'), dict):
             raise ValueError('Érvénytelen beállítás')
         STATE.update(stored)
-        STATE['config'] = DEFAULT | stored['config']
+        cfg = DEFAULT | stored['config']
+        # Older installations inherited local mode even with only a SharePoint URL.
+        if (not cfg['salesSource'] and cfg['source']=='local' and
+                not cfg['salesPath'] and cfg['salesUrl']):
+            cfg['salesSource'] = 'browser'
+        STATE['config'] = cfg
     except (ValueError, OSError, TypeError):
         raise RuntimeError('A helyi adatbázis nem olvasható: '+str(FILE))
 

@@ -1,5 +1,10 @@
 # SMC Compass · verziónapló
 
+## 1.2.4 · Időzített Sales-frissítés SharePointról
+
+- A böngészős Sales-forrás indításkor és a beállított percenként automatikusan letölti és importálja a munkafüzetet.
+- A régi, örökölt helyi mód SharePoint-link és üres helyi útvonal esetén automatikusan böngészős módra vált.
+
 ## 1.2.3 · Programfrissítés a Compassból
 
 - A **Programfrissítés** jóváhagyás után letölti és ellenőrzi az új MSI-t, bezárja a Compasst, majd elindítja a Windows Installer telepítését.

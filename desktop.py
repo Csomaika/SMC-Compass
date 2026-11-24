@@ -141,7 +141,12 @@ def start_browser_sales(data):
 
 def poll_browser_sales():
     job = BROWSER_SALES
-    if not job or time.monotonic()>=job['expires']:
+    if not job:
+        return {'result':'timeout'}
+    if time.monotonic()>=job['expires']:
+        with core.WRITE:
+            core.status('sales','Nem érkezett friss letöltés. Ellenőrizd a böngészős belépést, a fájlnevet és a letöltési mappát.',False,'SharePoint · böngészős letöltés')
+            core.save()
         job.clear()
         return {'result':'timeout'}
     changed = [(p,s) for p,s in download_candidates(job['folder'],job['matcher']).items()
@@ -230,7 +235,10 @@ def dispatch(action, data):
     if action=='forecast':
         return core.scenario(*core.forecast_args(data))
     if action=='refresh':
-        return {'ok':True, 'changed':core.refresh(force=bool(data.get('force')),local_only=bool(data.get('localOnly')))}
+        local_only = bool(data.get('localOnly'))
+        changed = core.refresh(force=bool(data.get('force')),local_only=local_only)
+        return {'ok':True, 'changed':changed, 'browserSales':not local_only and
+                core.source_mode('sales',core.STATE['config'])=='browser'}
     if action=='browser-sales-start':
         return start_browser_sales(data)
     if action=='browser-sales-poll':
