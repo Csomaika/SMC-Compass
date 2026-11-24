@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -234,11 +235,12 @@ internal sealed class DesktopWindow : Form
 
     private Control Sidebar()
     {
-        var panel=new Panel { Dock=DockStyle.Fill, Margin=new Padding(0), BackColor=CompassStyle.Sidebar };
+        var panel=new AccentPanel(Color.FromArgb(189,227,243),Color.FromArgb(221,244,236),LinearGradientMode.Vertical)
+            { Dock=DockStyle.Fill, Margin=new Padding(0) };
         panel.Paint+=(s,e)=>{using(var line=new Pen(CompassStyle.Border))e.Graphics.DrawLine(line,panel.Width-1,0,panel.Width-1,panel.Height);};
-        panel.Controls.Add(new CompassMark(Icon) { Location=new Point(18,20), Size=new Size(43,43), BackColor=CompassStyle.Sidebar });
-        var title=Caption("SMC Compass",16,true);title.Location=new Point(69,19);panel.Controls.Add(title);
-        var product=Caption("PSD SALES WORKSPACE",8,true);product.ForeColor=Muted;product.Location=new Point(71,47);panel.Controls.Add(product);
+        panel.Controls.Add(new CompassMark(Icon) { Location=new Point(18,20), Size=new Size(43,43), BackColor=Color.Transparent });
+        var title=Caption("SMC Compass",16,true);title.BackColor=Color.Transparent;title.Location=new Point(69,19);panel.Controls.Add(title);
+        var product=Caption("PSD SALES WORKSPACE",8,true);product.ForeColor=Muted;product.BackColor=Color.Transparent;product.Location=new Point(71,47);panel.Controls.Add(product);
         var labels=new[]{"Áttekintés","Havi adatbevitel","9-box vevőmátrix","Sugar pipeline","Források","Verziónapló"};
         var marks=new[]{"▤","✎","▦","◇","⚙","◷"};
         for(int i=0;i<labels.Length;i++)
@@ -248,8 +250,8 @@ internal sealed class DesktopWindow : Form
             button.Click+=(s,e)=>tabs.SelectedIndex=index;
             navigation[i]=button;panel.Controls.Add(button);
         }
-        var bottom=new Panel { Dock=DockStyle.Bottom, Height=70, BackColor=CompassStyle.Sidebar };
-        bottom.Paint+=(s,e)=>{using(var line=new Pen(CompassStyle.Border))e.Graphics.DrawLine(line,15,0,bottom.Width-15,0);};
+        var bottom=new Panel { Dock=DockStyle.Bottom, Height=70, BackColor=Color.Transparent };
+        bottom.Paint+=(s,e)=>{using(var line=new Pen(Color.FromArgb(165,207,210)))e.Graphics.DrawLine(line,15,0,bottom.Width-15,0);};
         var space=Caption("Helyi munkaterület",10,true);space.Location=new Point(19,12);bottom.Controls.Add(space);
         sidebarStatus.ForeColor=Muted;sidebarStatus.Location=new Point(19,36);bottom.Controls.Add(sidebarStatus);
         panel.Controls.Add(bottom);
@@ -470,32 +472,35 @@ internal sealed class DesktopWindow : Form
             board.Controls.Add(tile,col+1,row+1);
         }
 
-        var summary=new CardPanel { Dock=DockStyle.Fill,
-            Padding=new Padding(14,12,14,10), Margin=new Padding(0) };
-        var facts=Frame(24,46,26,41,26,0,41);
-        facts.BackColor=Color.White;
+        var summary=new CardPanel { Dock=DockStyle.Fill, Fill=Color.FromArgb(242,250,248), Outline=Color.FromArgb(198,227,225),
+            Padding=new Padding(12,11,12,10), Margin=new Padding(0) };
+        var facts=Frame(98,42,26,0,41);
+        facts.BackColor=Color.FromArgb(242,250,248);
         summary.Controls.Add(facts);
-        var title=Caption("SZŰRT VEVŐK",10,true);
-        title.ForeColor=Muted;
-        facts.Controls.Add(title,0,0);
-        matrixTotal.ForeColor=Ink;
-        facts.Controls.Add(matrixTotal,0,1);
-        matrixRanked.ForeColor=Teal;
-        facts.Controls.Add(matrixRanked,0,2);
+        var score=new AccentPanel(Color.FromArgb(12,108,136),Color.FromArgb(10,120,102),LinearGradientMode.ForwardDiagonal)
+            { Dock=DockStyle.Fill, Margin=new Padding(0,0,0,7) };
+        var title=Caption("SZŰRT VEVŐK",9,true);
+        title.ForeColor=Color.White;title.BackColor=Color.Transparent;title.Location=new Point(13,9);
+        score.Controls.Add(title);
+        matrixTotal.ForeColor=Color.White;matrixTotal.BackColor=Color.Transparent;matrixTotal.Location=new Point(11,24);
+        score.Controls.Add(matrixTotal);
+        matrixRanked.ForeColor=Color.FromArgb(220,255,247);matrixRanked.BackColor=Color.Transparent;matrixRanked.Location=new Point(13,64);
+        score.Controls.Add(matrixRanked);
+        facts.Controls.Add(score,0,0);
         matrixUnrated=Button("Pontozásra vár",false);
         matrixUnrated.Dock=DockStyle.Top;
         matrixUnrated.Click+=(s,e)=>SelectMatrixBox(boxFilter==UnratedCustomers?"":UnratedCustomers);
-        facts.Controls.Add(matrixUnrated,0,3);
+        facts.Controls.Add(matrixUnrated,0,1);
         matrixGuideTitle.ForeColor=Teal;
         matrixGuideTitle.AutoSize=false;matrixGuideTitle.Dock=DockStyle.Fill;
-        facts.Controls.Add(matrixGuideTitle,0,4);
+        facts.Controls.Add(matrixGuideTitle,0,2);
         matrixGuideNote.ForeColor=Muted;
         matrixGuideNote.AutoSize=false;matrixGuideNote.Dock=DockStyle.Fill;
-        facts.Controls.Add(matrixGuideNote,0,5);
+        facts.Controls.Add(matrixGuideNote,0,3);
         matrixReset=Button("Összes csoport",false);
         matrixReset.Dock=DockStyle.Top;
         matrixReset.Click+=(s,e)=>SelectMatrixBox("");
-        facts.Controls.Add(matrixReset,0,6);
+        facts.Controls.Add(matrixReset,0,4);
         upper.Controls.Add(summary,1,0);
         layout.Controls.Add(upper,0,0);
 

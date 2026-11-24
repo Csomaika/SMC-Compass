@@ -12,6 +12,7 @@ internal sealed class CompassMark : Control
 
     internal CompassMark(Icon appIcon)
     {
+        SetStyle(ControlStyles.SupportsTransparentBackColor, true);
         mark = new Icon(appIcon, 64, 64);
         AccessibleName = "SMC Compass";
     }

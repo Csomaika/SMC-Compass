@@ -1,5 +1,9 @@
 # SMC Compass · verziónapló
 
+## 1.2.14 · Kék és menta árnyalatok
+
+- A navigáció kékből mentába váltó hátteret kapott. A 9-box jobb oldali összesítője türkiz fejlécen emeli ki a vevőszámot.
+
 ## 1.2.13 · Világosabb munkaterület
 
 - Az oldalsáv világos hátteret kapott, a 9-box összefoglaló fehér lett. A kijelölt menüpontot és a mátrixmezőt türkiz jelzi.

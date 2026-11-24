@@ -73,6 +73,27 @@ internal sealed class AnimationFrames : IDisposable
     public void Dispose() { Enabled=false; }
 }
 
+internal sealed class AccentPanel : Panel
+{
+    private readonly Color start, end;
+    private readonly LinearGradientMode direction;
+
+    internal AccentPanel(Color start,Color end,LinearGradientMode direction)
+    {
+        this.start=start;this.end=end;this.direction=direction;
+        BackColor=start;
+        DoubleBuffered=true;
+        ResizeRedraw=true;
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        if(ClientSize.Width<1||ClientSize.Height<1)return;
+        using(var brush=new LinearGradientBrush(ClientRectangle,start,end,direction))
+            e.Graphics.FillRectangle(brush,ClientRectangle);
+    }
+}
+
 internal class CardPanel : Panel
 {
     internal Color Fill=Color.White;
@@ -312,7 +333,7 @@ internal sealed class NavButton : Button
             Invalidate();
         });
         Width=195;Height=45;FlatStyle=FlatStyle.Flat;FlatAppearance.BorderSize=0;
-        ForeColor=DesktopWindow.Ink;BackColor=CompassStyle.Sidebar;
+        ForeColor=DesktopWindow.Ink;BackColor=Color.Transparent;
         Font=new Font("Segoe UI",10,FontStyle.Bold);
         Cursor=Cursors.Hand;
         DoubleBuffered=true;
@@ -325,11 +346,16 @@ internal sealed class NavButton : Button
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        var g=e.Graphics;g.SmoothingMode=SmoothingMode.AntiAlias;g.Clear(CompassStyle.Sidebar);
+        var g=e.Graphics;g.SmoothingMode=SmoothingMode.AntiAlias;
         if(level>0||hot||Focused)
         {
             using(var frame=CompassStyle.Round(new RectangleF(0,1,Width-1,Height-2),8))
-            using(var fill=new SolidBrush(CompassStyle.Mix(hot||Focused?CompassStyle.Pale:CompassStyle.Sidebar,Color.FromArgb(218,244,240),level)))g.FillPath(fill,frame);
+            using(var fill=new SolidBrush(Color.FromArgb((int)(255*level),237,252,248)))
+            {
+                if(hot||Focused)
+                    using(var hover=new SolidBrush(Color.FromArgb(90,Color.White)))g.FillPath(hover,frame);
+                g.FillPath(fill,frame);
+            }
         }
         if(level>0)
         {
