@@ -1,5 +1,10 @@
 # SMC Compass · verziónapló
 
+## 1.2.12 · Egyértelműbb 9-box besorolások
+
+- A mezők 01-től 09-ig számozottak, rövid nevet kaptak, és a lista a mezőszám mellett mindkét pontszámot mutatja.
+- A két tengely értelmezését a jobb oldali panel magyarázza. Csempe kiválasztásakor itt jelenik meg az adott helyzethez javasolt értékesítési lépés.
+
 ## 1.2.11 · Megújult 9-box vevőmátrix
 
 - A csempék megjelenítik a darabszámot és a besorolt vevőkön belüli részarányt. A kitöltés és az aránysáv szűréskor animálva igazodik az adatokhoz.

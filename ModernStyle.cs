@@ -409,18 +409,43 @@ internal sealed class MatrixTile : Button
     private static readonly Color Teal=Color.FromArgb(12,135,151);
     private readonly AnimationFrames frames;
     private readonly Stopwatch watch=new Stopwatch();
-    private readonly Font numberFont=new Font("Segoe UI",19,FontStyle.Bold);
+    private static readonly string[] Names={
+        "Figyelés","Alapkapcsolat","Kiszolgálás",
+        "Feltérképezés","Fejlesztés","Megtartás",
+        "Belépés","Pozícióerősítés","Bővítés"
+    };
+    private static readonly string[] Descriptions={
+        "Kövesd időnként a vevő változásait. Akkor keresd meg, ha új igény vagy projekt jelenik meg.",
+        "Tartsd fenn a meglévő kapcsolatot. A konkrét igényekre adj célzott választ.",
+        "Tartsd meg a meglévő forgalmat, és tedd egyszerűvé az ismétlődő rendelések kiszolgálását.",
+        "Térképezd fel a döntéshozókat és a belépésre alkalmas alkalmazásokat.",
+        "Válassz egy konkrét projektet, ahol próbaegységgel vagy műszaki támogatással léphetsz előre.",
+        "Védd a meglévő üzletet, és keresd a kapcsolódó alkalmazásokat a vevőn belül.",
+        "A nagy lehetőséghez keress első belépési projektet. Referenciával vagy próbaegységgel indíts.",
+        "Növeld az SMC részesedését további alkalmazásokban, üzletágakban vagy telephelyeken.",
+        "Egyeztess közös növekedési tervet a vevővel, és rangsoroljátok a következő projekteket."
+    };
+    private readonly Font titleFont=new Font("Segoe UI",11,FontStyle.Bold);
     private readonly Font detailFont=new Font("Segoe UI",9,FontStyle.Bold);
-    private readonly string coordinates;
-    private readonly string scores;
+
+    internal string Number { get; private set; }
+    internal string Title { get; private set; }
+    internal string Advice { get; private set; }
+    internal string Scores { get; private set; }
+    internal string Coordinates { get; private set; }
+    internal string Heading { get { return Number+" · "+Title; } }
     private int count, total;
     private double fill, from, target;
     private bool hot, selected;
 
     internal MatrixTile(int potential,int position)
     {
-        coordinates=potential+" × "+position;
-        scores="Piaci potenciál "+potential+", SMC-pozíció "+position;
+        int index=(potential-1)*3+position-1;
+        Number=(index+1).ToString("00");
+        Title=Names[index];
+        Advice=Descriptions[index];
+        Coordinates=potential+" × "+position;
+        Scores="Piaci potenciál "+potential+"/3 · SMC-pozíció "+position+"/3";
         Dock=DockStyle.Fill;
         Margin=new Padding(4,3,4,3);
         BackColor=Color.White;
@@ -439,8 +464,8 @@ internal sealed class MatrixTile : Button
     internal void Display(int count,int total,bool selected)
     {
         this.count=count;this.total=total;this.selected=selected;
-        AccessibleName=scores+" · "+count+" vevő";
-        AccessibleDescription=selected?"Aktív szűrés. Aktiválással törölhető.":"Aktiválással erre a mezőre szűr.";
+        AccessibleName=Heading+" · "+Scores+" · "+count+" vevő";
+        AccessibleDescription=Advice+" "+(selected?"Aktív szűrés. Aktiválással törölhető.":"Aktiválással erre a mezőre szűr.");
         double next=total>0?(double)count/total:0;
         if(!Visible||!IsHandleCreated||!CompassStyle.MotionEnabled)
         {
@@ -470,19 +495,24 @@ internal sealed class MatrixTile : Button
         {
             g.FillPath(surface,path);g.DrawPath(edge,path);
         }
-        int countWidth=TextRenderer.MeasureText(count.ToString(),numberFont,Size.Empty,TextFormatFlags.NoPadding).Width;
-        HeroPanel.Draw(g,count.ToString(),numberFont,DesktopWindow.Ink,new Rectangle(11,5,Width-69,Height-17));
-        if(Width>=countWidth+87)
-            HeroPanel.Draw(g,"vevő",detailFont,DesktopWindow.Muted,new Rectangle(16+countWidth,7,35,Height-17));
-        string share=total>0?(100.0*count/total).ToString("0.#")+"%":"0%";
-        DrawRight(g,coordinates,selected?Accent:DesktopWindow.Muted,new Rectangle(Width-66,5,55,19));
-        if(Height>=53)DrawRight(g,share,DesktopWindow.Muted,new Rectangle(Width-57,24,46,19));
+        using(var badge=CompassStyle.Round(new RectangleF(10,5,26,18),5))
+        {
+            g.FillPath(selected?Brushes.Teal:Brushes.MidnightBlue,badge);
+            HeroPanel.Draw(g,Number,detailFont,Color.White,new Rectangle(15,5,20,18));
+        }
+        HeroPanel.Draw(g,Title,titleFont,DesktopWindow.Ink,new Rectangle(10,22,Width-20,22));
+        DrawRight(g,Coordinates,selected?Accent:DesktopWindow.Muted,new Rectangle(Width-54,5,43,18));
+        if(Height>=61)
+        {
+            string share=total>0?(100.0*count/total).ToString("0.#")+"%":"0%";
+            HeroPanel.Draw(g,count+" vevő · "+share,detailFont,DesktopWindow.Muted,new Rectangle(10,43,Width-20,15));
+        }
         float width=Width-22;
         using(var rail=new SolidBrush(Color.FromArgb(220,233,243)))
         using(var bar=new SolidBrush(Teal))
         {
-            g.FillRectangle(rail,11,Height-10,width,3);
-            if(fill>0)g.FillRectangle(bar,11,Height-10,Math.Max(2,(float)(fill*width)),3);
+            g.FillRectangle(rail,11,Height-8,width,3);
+            if(fill>0)g.FillRectangle(bar,11,Height-8,Math.Max(2,(float)(fill*width)),3);
         }
     }
 
@@ -493,7 +523,7 @@ internal sealed class MatrixTile : Button
 
     protected override void Dispose(bool disposing)
     {
-        if(disposing){frames.Dispose();numberFont.Dispose();detailFont.Dispose();}
+        if(disposing){frames.Dispose();titleFont.Dispose();detailFont.Dispose();}
         base.Dispose(disposing);
     }
 }

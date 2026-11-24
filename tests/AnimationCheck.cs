@@ -74,7 +74,7 @@ internal static class AnimationCheck
         using(var window=new Form { ClientSize=new Size(1240,760), ShowInTaskbar=false })
         {
             var hero=new HeroPanel { Bounds=new Rectangle(215,12,1000,145) };
-            var chart=new ForecastChart { Bounds=new Rectangle(215,280,1000,430) };
+            var chart=new ForecastChart { Bounds=new Rectangle(215,381,1000,352) };
             var card=new KpiCard("Tény YTD","↗") { Bounds=new Rectangle(215,169,255,100) };
             var nav=new NavButton("Áttekintés","▤") { Location=new Point(10,12) };
             var strip=new RefreshStrip();
@@ -82,7 +82,7 @@ internal static class AnimationCheck
             for(int i=0;i<matrix.Length;i++)
             {
                 matrix[i]=new MatrixTile(3-i/3,i%3+1) {
-                    Dock=DockStyle.None, Bounds=new Rectangle(490+(i%3)*245,163+(i/3)*38,228,36)
+                    Dock=DockStyle.None, Bounds=new Rectangle(490+(i%3)*245,163+(i/3)*70,228,66)
                 };
                 window.Controls.Add(matrix[i]);
             }
