@@ -84,10 +84,20 @@ def build(output, profile):
         shutil.copy2(icon,dist/'Compass.ico')
         assembly.write_text('using System.Reflection;\n[assembly: AssemblyTitle("SMC Compass")]\n'
                             f'[assembly: AssemblyVersion("{version}.0")]\n[assembly: AssemblyFileVersion("{version}.0")]\n',encoding='utf-8')
-        base=[str(framework/'csc.exe'),'/nologo','/target:winexe','/platform:x64','/optimize+',
+        sdk=Path(stage)/'sdk'
+        subprocess.run(['nuget','install','Microsoft.Web.WebView2','-Version','1.0.2903.40',
+                        '-Source','https://api.nuget.org/v3/index.json','-OutputDirectory',str(sdk),'-NonInteractive'],check=True)
+        package=sdk/'Microsoft.Web.WebView2.1.0.2903.40'
+        refs=[]
+        for libname in ('Microsoft.Web.WebView2.Core.dll','Microsoft.Web.WebView2.WinForms.dll'):
+            libpath=next(p for p in package.rglob(libname) if p.parent.name in ('net462','net45'))
+            shutil.copy2(libpath,dist/libname)
+            refs.append('/reference:'+str(dist/libname))
+        shutil.copy2(package/'runtimes/win-x64/native/WebView2Loader.dll',dist/'WebView2Loader.dll')
+        base=[str(framework/'csc.exe'),*refs,'/nologo','/target:winexe','/platform:x64','/optimize+',
               '/reference:System.Windows.Forms.dll','/reference:System.Drawing.dll',f'/win32icon:{icon}',f'/win32manifest:{source / "app.manifest"}']
         subprocess.run([*base,'/reference:System.Web.Extensions.dll',f'/out:{dist / "SMC-Compass.exe"}',
-                        str(assembly),*[str(source/name) for name in ('Launcher.cs','DesktopWindow.cs','ForecastChart.cs','ModernStyle.cs')]],check=True)
+                        str(assembly),*[str(source/name) for name in ('Launcher.cs','DesktopWindow.cs','ForecastChart.cs','ModernStyle.cs','SalesDownload.cs')]],check=True)
         output.parent.mkdir(parents=True,exist_ok=True)
         with ZipFile(output,'w',ZIP_DEFLATED) as archive:
             for path in sorted(dist.rglob('*')):

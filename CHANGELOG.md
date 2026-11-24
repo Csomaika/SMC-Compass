@@ -1,5 +1,10 @@
 # SMC Compass · verziónapló
 
+## 1.2.5 · Sales-import a Compasson belül
+
+- A SharePoint-frissítés egy saját ideiglenes fájlba tölt, menti a beolvasott adatokat, majd eltávolítja a példányt. Az állapotsor jelzi az import idejét és a kijelzett utolsó tényhónapot.
+- Az időzített frissítéshez a Compass beépített Edge WebView2 nézetet használ. Ha bejelentkezés szükséges, a kézi Sales-frissítés gombbal nyitható meg.
+
 ## 1.2.4 · Időzített Sales-frissítés SharePointról
 
 - A böngészős Sales-forrás indításkor és a beállított percenként automatikusan letölti és importálja a munkafüzetet.

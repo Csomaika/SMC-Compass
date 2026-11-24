@@ -3,6 +3,7 @@ import io
 import json
 import re
 import sys
+import tempfile
 import time
 from pathlib import Path
 from urllib.error import HTTPError
@@ -14,6 +15,7 @@ import updates
 
 DEVICE = {}
 BROWSER_SALES = {}
+SALES_TRANSFER = None
 
 
 def configure(fields):
@@ -102,6 +104,31 @@ def import_workbook(data, mode='Kézi Excel-import', after_import=None):
         if after_import:
             after_import(core.STATE['config'])
         core.save()
+
+
+def embedded_sales(action):
+    global SALES_TRANSFER
+    if action == 'sales-download-start':
+        url = core.sharepoint_browser_download(core.STATE['config']['salesUrl'])
+        if SALES_TRANSFER is not None:
+            raise ValueError('Már folyamatban van egy Sales-letöltés.')
+        SALES_TRANSFER = tempfile.TemporaryDirectory(prefix='SMC-Compass-Sales-')
+        path = Path(SALES_TRANSFER.name)/'Sales.xlsx'
+        return {'url':url,'path':str(path)}
+    if SALES_TRANSFER is None:
+        if action == 'sales-download-cancel':
+            return {}
+        raise ValueError('Nincs folyamatban Sales-letöltés.')
+    try:
+        if action == 'sales-download-finish':
+            path = Path(SALES_TRANSFER.name)/'Sales.xlsx'
+            def confirm(cfg):
+                cfg['salesSource'] = 'browser'
+            import_workbook({'kind':'sales','path':str(path)},'SharePoint · Compass',confirm)
+    finally:
+        transfer, SALES_TRANSFER = SALES_TRANSFER, None
+        transfer.cleanup()
+    return {}
 
 
 def download_candidates(folder, matcher):
@@ -239,6 +266,8 @@ def dispatch(action, data):
         changed = core.refresh(force=bool(data.get('force')),local_only=local_only)
         return {'ok':True, 'changed':changed, 'browserSales':not local_only and
                 core.source_mode('sales',core.STATE['config'])=='browser'}
+    if action in ('sales-download-start','sales-download-finish','sales-download-cancel'):
+        return embedded_sales(action)
     if action=='browser-sales-start':
         return start_browser_sales(data)
     if action=='browser-sales-poll':

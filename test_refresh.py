@@ -62,6 +62,28 @@ class WorkbookRefreshTest(unittest.TestCase):
                         self.assertEqual(desktop.dispatch('refresh', {})['browserSales'],should_download)
                         self.assertFalse(desktop.dispatch('refresh', {'localOnly':True})['browserSales'])
 
+    def test_owned_download_updates_dashboard_and_releases_only_temp_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            cfg = app.DEFAULT | dict(salesUrl='https://contoso.sharepoint.com/sites/Test/doc?sourcedoc=12345678-1234-1234-1234-123456789abc')
+            state = {'config':cfg,'status':{},'series':{},'manual':{},'salesSheets':[]}
+            original = home/'Sales.xlsx'
+            original.write_bytes(self.workbook(1500))
+            with patch.multiple(app, HOME=home, FILE=home/'compass.json',STATE=state,CHECKS={},LOCAL_CHECKS={}):
+                dest = Path(desktop.dispatch('sales-download-start',{})['path'])
+                dest.write_bytes(original.read_bytes())
+                desktop.dispatch('sales-download-finish',{})
+                self.assertEqual(app.scenario(2026,app.SALES_KEY)['actual'][7],1500)
+                self.assertTrue(app.FILE.is_file())
+                self.assertFalse(dest.parent.exists())
+                self.assertTrue(original.is_file())
+                dest = Path(desktop.dispatch('sales-download-start',{})['path'])
+                dest.write_bytes(b'invalid file')
+                with self.assertRaises(ValueError):
+                    desktop.dispatch('sales-download-finish',{})
+                self.assertFalse(dest.parent.exists())
+                self.assertEqual(app.scenario(2026,app.SALES_KEY)['actual'][7],1500)
+
     def test_browser_sales_imports_only_the_new_download(self):
         with tempfile.TemporaryDirectory() as folder:
             home = Path(folder)

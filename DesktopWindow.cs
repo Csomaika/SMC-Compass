@@ -210,13 +210,13 @@ internal sealed class DesktopWindow : Form
         updateBtn = Button("Programfrissítés",false);
         exportBtn = Button("Excel-export",true);
         refreshBtn = Button("Adatfrissítés",false);
-        browserSalesBtn = Button("Sales frissítése böngészőből",false);
+        browserSalesBtn = Button("Sales frissítése",false);
         updateBtn.Click += (s,e) => Run(UpdateProgram);
         exportBtn.Click += (s,e) => Run(Export);
         refreshBtn.Click += (s,e) => Run(() => RefreshData(true,true));
         browserSalesBtn.Click += (s,e) => {
             if(browserSalesActive)cancelBrowserSales=true;
-            else Run(() => ImportSalesFromBrowser(false));
+            else Run(() => ImportSalesInCompass(false));
         };
         actions.Controls.Add(updateBtn);
         actions.Controls.Add(exportBtn);
@@ -498,6 +498,7 @@ internal sealed class DesktopWindow : Form
         imports.Controls.Add(Action("Sales XLSX importálása",()=>Import("sales")));
         imports.Controls.Add(Action("SpeedUp XLSX importálása",()=>Import("buyers")));
         voidRow(list,imports);
+        voidRow(list,Action("Külső böngésző használata egyszer",()=>ImportSalesFromBrowser(false)));
         voidRow(list,Caption("Microsoft Entra · közvetlen SharePoint",13,true));
         Setting(list,"Microsoft tenant ID","tenant",Edit(450));
         Setting(list,"Microsoft client ID","client",Edit(450));
@@ -869,12 +870,40 @@ internal sealed class DesktopWindow : Form
         if(forced||Json.Flag(result,"changed")) {await RefreshState(false);await FetchForecast();}
         if(Json.Flag(result,"browserSales"))
         {
-            try { await ImportSalesFromBrowser(!forced); }
+            try { await ImportSalesInCompass(!forced); }
             finally { nextRefresh=DateTime.UtcNow.AddMinutes(IntValue(Json.Get(Config,"minutes"),10)); }
             return;
         }
         if(announce)foot.Text=String.Join("  ·  ",new[]{"sales","buyers"}.Select(kind=>
             (kind=="sales"?"Sales: ":"SpeedUp: ")+(SourceMode(kind)=="manual"?"kézi import":Json.Flag(Source(kind),"ok")?"frissítve":"korábbi adatok")));
+    }
+
+    private async Task ImportSalesInCompass(bool scheduled)
+    {
+        var start=await worker.CallAsync("sales-download-start");
+        browserSalesActive=true;
+        cancelBrowserSales=false;
+        browserSalesBtn.Text="Letöltés megszakítása";
+        browserSalesBtn.Enabled=true;
+        UseWaitCursor=false;
+        foot.Text="Sales Excel letöltése a Compassban…";
+        try
+        {
+            await SalesDownload.Fetch(this,Json.Text(start,"url"),Json.Text(start,"path"),!scheduled,()=>cancelBrowserSales);
+            await worker.CallAsync("sales-download-finish");
+            await RefreshState(!scheduled);
+            await FetchForecast();
+            int count=IntValue(Json.Get(forecast,"count"),0);
+            string value=count>0?Months[count-1]+" · "+String.Format(Hu,"{0:N0} db",At(Json.Items(forecast,"actual"),count-1)):"nincs tényadat";
+            foot.Text="Sales beolvasva "+DateTime.Now.ToString("T",Hu)+" · "+Json.Text(forecast,"source")+" · "+value;
+        }
+        finally
+        {
+            browserSalesActive=false;
+            browserSalesBtn.Text="Sales frissítése";
+            // The worker also releases its private file if download or import fails.
+            worker.Call("sales-download-cancel",null);
+        }
     }
 
     private async Task ImportSalesFromBrowser(bool scheduled)
@@ -928,7 +957,7 @@ internal sealed class DesktopWindow : Form
         }
         finally
         {
-            browserSalesBtn.Text="Sales frissítése böngészőből";
+            browserSalesBtn.Text="Sales frissítése";
             browserSalesActive=false;
         }
     }
