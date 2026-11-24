@@ -28,6 +28,7 @@ internal sealed class DesktopWindow : Form
     private string metric = "ofsoldelectricactuators", method = "blend", boxFilter = "";
     private int spread = 10;
 
+    private readonly Panel workspace=new Panel { Dock=DockStyle.Fill,Margin=new Padding(0) };
     private readonly NativePages tabs = new NativePages();
     private readonly HeroPanel hero = new HeroPanel { Dock=DockStyle.Fill, Margin=new Padding(3,3,4,9) };
     private readonly Label breadcrumb = Caption("PSD   /   Áttekintés",12,true);
@@ -53,7 +54,7 @@ internal sealed class DesktopWindow : Form
     private readonly Label sourcesStatus = Caption("",10,false);
     private readonly TextBox revisions = new TextBox { Dock = DockStyle.Fill, BorderStyle = BorderStyle.FixedSingle, Multiline = true,
         ReadOnly = true, ScrollBars = ScrollBars.Vertical, BackColor = Color.White, ForeColor = Ink, Font = new Font("Segoe UI",11) };
-    private Button refreshBtn, exportBtn, updateBtn, browserSalesBtn;
+    private Button refreshBtn, exportBtn, updateBtn;
 
     private sealed class Pick
     {
@@ -86,7 +87,8 @@ internal sealed class DesktopWindow : Form
         content.RowStyles.Add(new RowStyle(SizeType.Absolute,28));
         shell.Controls.Add(content,1,0);
         content.Controls.Add(Header(),0,0);
-        content.Controls.Add(tabs,0,1);
+        workspace.Controls.Add(tabs);
+        content.Controls.Add(workspace,0,1);
         foot.Dock = DockStyle.Fill;
         foot.TextAlign = ContentAlignment.MiddleLeft;
         foot.Padding=new Padding(16,0,6,0);
@@ -173,7 +175,7 @@ internal sealed class DesktopWindow : Form
     {
         if (busy || IsDisposed) return;
         busy = true;
-        refreshBtn.Enabled = exportBtn.Enabled = updateBtn.Enabled = browserSalesBtn.Enabled = false;
+        refreshBtn.Enabled = exportBtn.Enabled = updateBtn.Enabled = false;
         UseWaitCursor = !quiet;
         if(!quiet)foot.Text = "Művelet folyamatban…";
         try
@@ -195,7 +197,7 @@ internal sealed class DesktopWindow : Form
             if (!IsDisposed)
             {
                 UseWaitCursor = false;
-                refreshBtn.Enabled = exportBtn.Enabled = updateBtn.Enabled = browserSalesBtn.Enabled = true;
+                refreshBtn.Enabled = exportBtn.Enabled = updateBtn.Enabled = true;
             }
         }
     }
@@ -206,22 +208,16 @@ internal sealed class DesktopWindow : Form
         head.Paint+=(s,e)=>{using(var line=new Pen(CompassStyle.Border))e.Graphics.DrawLine(line,0,head.Height-1,head.Width,head.Height-1);};
         breadcrumb.Location=new Point(21,18);
         head.Controls.Add(breadcrumb);
-        var actions = new FlowLayoutPanel { Dock=DockStyle.Right, Width=620, FlowDirection=FlowDirection.RightToLeft, Padding=new Padding(0,9,15,0), WrapContents=false, BackColor=Color.White };
-        updateBtn = Button("Programfrissítés",false);
-        exportBtn = Button("Excel-export",true);
-        refreshBtn = Button("Adatfrissítés",false);
-        browserSalesBtn = Button("Sales frissítése",false);
-        updateBtn.Click += (s,e) => Run(UpdateProgram);
+        var actions = new FlowLayoutPanel { Dock=DockStyle.Right, Width=370, FlowDirection=FlowDirection.RightToLeft, Padding=new Padding(0,9,15,0), WrapContents=false, BackColor=Color.White };
+        exportBtn = Button("Excel-export",false);
+        refreshBtn = Button("Adatfrissítés",true);
         exportBtn.Click += (s,e) => Run(Export);
-        refreshBtn.Click += (s,e) => Run(() => RefreshData(true,true));
-        browserSalesBtn.Click += (s,e) => {
+        refreshBtn.Click += (s,e) => {
             if(browserSalesActive)cancelBrowserSales=true;
-            else Run(() => ImportSalesInCompass(false));
+            else Run(() => RefreshData(true,true));
         };
-        actions.Controls.Add(updateBtn);
         actions.Controls.Add(exportBtn);
         actions.Controls.Add(refreshBtn);
-        actions.Controls.Add(browserSalesBtn);
         head.Controls.Add(actions);
         return head;
     }
@@ -490,6 +486,8 @@ internal sealed class DesktopWindow : Form
         Setting(list,"SpeedUp munkalap","buyersSheet",Edit(165));
         PathSetting(list,"Sales helyi / OneDrive-fájl","salesPath");
         PathSetting(list,"SpeedUp helyi / OneDrive-fájl","buyersPath");
+        Setting(list,"Céges bejelentkezési e-mail","accountEmail",Edit(325));
+        Setting(list,"Jelszó mentése","rememberLogin",new CheckBox { AutoSize=true,Text="A WebView2 felajánlhatja a mentést ezen a gépen" });
         Setting(list,"Sales SharePoint-munkafüzet","salesUrl",Edit(600));
         Setting(list,"Böngészős Sales-fájlnév","salesDownloadName",Edit(300));
         Setting(list,"Böngésző letöltési mappája","salesDownloadFolder",Edit(420));
@@ -556,7 +554,10 @@ internal sealed class DesktopWindow : Form
     private void BuildRevisions(TabPage page)
     {
         var layout=Frame(52,0);page.Controls.Add(layout);
-        var title=Caption("Telepített verzió  ·  "+Launcher.Version,18,true);layout.Controls.Add(title,0,0);
+        var bar=Row();
+        bar.Controls.Add(Caption("Telepített verzió  ·  "+Launcher.Version,18,true));
+        updateBtn=Action("Programfrissítés",UpdateProgram);
+        bar.Controls.Add(updateBtn);layout.Controls.Add(bar,0,0);
         string path=Path.Combine(Launcher.Folder,"CHANGELOG.md");
         if(File.Exists(path))
             revisions.Text=String.Join(Environment.NewLine,File.ReadAllLines(path).Skip(2).Select(line=>line.StartsWith("## ")?line.Substring(3):line.StartsWith("- ")?"• "+line.Substring(2):line));
@@ -891,13 +892,13 @@ internal sealed class DesktopWindow : Form
         var start=await worker.CallAsync("sales-download-start");
         browserSalesActive=true;
         cancelBrowserSales=false;
-        browserSalesBtn.Text="Letöltés megszakítása";
-        browserSalesBtn.Enabled=true;
+        refreshBtn.Text="Letöltés megszakítása";
+        refreshBtn.Enabled=true;
         UseWaitCursor=false;
         foot.Text="Sales Excel letöltése a Compassban…";
         try
         {
-            await SalesDownload.Fetch(this,Json.Text(start,"url"),Json.Text(start,"path"),!scheduled,()=>cancelBrowserSales);
+            await SalesDownload.Fetch(workspace,Json.Text(start,"url"),Json.Text(start,"path"),!scheduled,()=>cancelBrowserSales,Json.Text(Config,"accountEmail"),Json.Flag(Config,"rememberLogin"));
             foot.Text="Letöltve · a Sales-adatok beolvasása…";
             var oldActual=Json.Items(forecast,"actual").ToArray();
             await worker.CallAsync("sales-download-finish");
@@ -912,7 +913,7 @@ internal sealed class DesktopWindow : Form
         finally
         {
             browserSalesActive=false;
-            browserSalesBtn.Text="Sales frissítése";
+            refreshBtn.Text="Adatfrissítés";
             // The worker also releases its private file if download or import fails.
             worker.Call("sales-download-cancel",null);
         }
@@ -942,8 +943,8 @@ internal sealed class DesktopWindow : Form
                 start=await worker.CallAsync("browser-sales-start",options);
             }
             Launcher.OpenWeb(Json.Text(start,"url"));
-            browserSalesBtn.Text="Böngészős frissítés megszakítása";
-            browserSalesBtn.Enabled=true;
+            refreshBtn.Text="Böngészős frissítés megszakítása";
+            refreshBtn.Enabled=true;
             UseWaitCursor=false;
             foot.Text="Várom a friss Sales Excelt a Letöltések mappában…";
             while(!cancelBrowserSales)
@@ -969,7 +970,7 @@ internal sealed class DesktopWindow : Form
         }
         finally
         {
-            browserSalesBtn.Text="Sales frissítése";
+            refreshBtn.Text="Adatfrissítés";
             browserSalesActive=false;
         }
     }
@@ -1023,34 +1024,29 @@ internal sealed class DesktopWindow : Form
 
     private async Task MicrosoftSignIn()
     {
-        await SaveSources();
+        await worker.CallAsync("config",ReadSettings());
+        await RefreshState(false);
         var request=await worker.CallAsync("signin");
-        string url=Json.Text(request,"url"),code=Json.Text(request,"code");
-        if(MessageBox.Show(this,"A Microsoft bejelentkező oldalán add meg ezt a belépési kódot:\r\n\r\n"+code+"\r\n\r\nMegnyitod a Microsoft oldalát?", "SharePoint-belépés",MessageBoxButtons.OKCancel,MessageBoxIcon.Information)!=DialogResult.OK)
+        UseWaitCursor=false;
+        try
         {
-            await worker.CallAsync("signin-cancel");return;
-        }
-        Launcher.OpenWeb(url);
-        using(var dialog=new Form { Text="Microsoft-belépés",StartPosition=FormStartPosition.CenterParent,ClientSize=new Size(440,145),
-            FormBorderStyle=FormBorderStyle.FixedDialog,MinimizeBox=false,MaximizeBox=false,ShowInTaskbar=false })
-        {
-            var note=Caption("Belépési kód: "+code+"\r\nA Compass a Microsoft visszajelzésére vár.",11,true);
-            note.Location=new Point(15,15);dialog.Controls.Add(note);
-            var cancel=Button("Mégse",false);cancel.Location=new Point(15,91);cancel.DialogResult=DialogResult.Cancel;dialog.Controls.Add(cancel);dialog.CancelButton=cancel;
-            string error=null;bool polling=false;
-            using(var poll=new Timer { Interval=4000 })
+            using(var pane=new AccountPane(workspace))
             {
-                poll.Tick+=async (s,e)=>{
-                    if(polling)return;polling=true;
-                    try { var answer=await worker.CallAsync("signin-poll");if(!dialog.IsDisposed&&!Json.Flag(answer,"pending"))dialog.DialogResult=DialogResult.OK; }
-                    catch(Exception ex){error=ex.Message;if(!dialog.IsDisposed)dialog.DialogResult=DialogResult.Abort;}
-                    finally{polling=false;}
-                };
-                poll.Start();
-                var result=dialog.ShowDialog(this);poll.Stop();
-                if(result!=DialogResult.OK){await worker.CallAsync("signin-cancel");if(error!=null)throw new InvalidOperationException(error);return;}
+                await pane.Initialize(Json.Text(Config,"accountEmail"),Json.Flag(Config,"rememberLogin"));
+                pane.Title.Text="Microsoft-belépés · kód: "+Json.Text(request,"code");
+                pane.Reveal();
+                pane.View.CoreWebView2.Navigate(Json.Text(request,"url"));
+                while(!pane.Canceled)
+                {
+                    await Task.Delay(1000);
+                    if(pane.Canceled)return;
+                    var response=await worker.CallAsync("signin-poll");
+                    if(!Json.Flag(response,"pending"))break;
+                }
+                if(pane.Canceled)return;
             }
         }
+        finally { worker.Call("signin-cancel",null); }
         await RefreshData(true,true);
     }
 

@@ -21,7 +21,7 @@ SALES_KEY = 'ofsoldelectricactuators'
 MONTHS = 'Ápr Máj Jún Júl Aug Szept Okt Nov Dec Jan Feb Márc'.split()
 DEFAULT = dict(salesUrl='', buyersUrl='', salesPath='', buyersPath='', salesSheet='REPORT26', previousSheet='REPORT25',
                buyersSheet='Munka1', fiscal=2026, minutes=10, source='local', tenant='', client='',
-               salesSource='', buyersSource='', salesDownloadName='', salesDownloadFolder='',
+               salesSource='', buyersSource='', salesDownloadName='', salesDownloadFolder='',accountEmail='',rememberLogin=False,
                sugarUrl='', sugarApi='v11', sugarMine=True)
 PROFILE_FILE = HERE/'compass-profile.json'
 PROFILE = json.loads(PROFILE_FILE.read_text(encoding='utf-8-sig')) if PROFILE_FILE.is_file() else {}

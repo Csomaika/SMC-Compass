@@ -14,9 +14,20 @@ payload = WorkbookRefreshTest.workbook(1500)
 
 class Site(BaseHTTPRequestHandler):
     requests_for_file = 0
+    interactive_requests = 0
 
     def do_GET(self):
-        if self.path == '/download':
+        if self.path == '/interactive':
+            Site.interactive_requests += 1
+            self.send_response(200)
+            if Site.interactive_requests==1:
+                self.send_header('Content-Type','text/html')
+                data=b'<html>Account selection</html>'
+            else:
+                self.send_header('Content-Disposition','attachment; filename=Sales.xlsx')
+                self.send_header('Content-Type','application/octet-stream')
+                data=payload
+        elif self.path == '/download':
             Site.requests_for_file += 1
             if Site.requests_for_file == 1:
                 self.send_response(302)
@@ -50,7 +61,23 @@ internal class Launcher {
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
         using(var form = new Form()) {
             form.Shown += async (s,e) => {
-                try { await SalesDownload.Fetch(form,args[0],args[1],false,()=>false); }
+                try {
+                    await SalesDownload.Fetch(form,args[0],args[1],false,()=>false);
+                    using(var timer=new Timer { Interval=200 }) {
+                        timer.Tick+=(sender,ev)=>{
+                            foreach(Control child in form.Controls) {
+                                var pane=child as AccountPane;
+                                if(pane==null || !pane.Visible || Application.OpenForms.Count!=1)continue;
+                                foreach(Control entry in pane.Bar.Controls) {
+                                    var button=entry as Button;
+                                    if(button!=null && button.Text=="Letöltés folytatása"){timer.Stop();button.PerformClick();return;}
+                                }
+                            }
+                        };
+                        timer.Start();
+                        await SalesDownload.Fetch(form,args[0].Replace("/download","/interactive"),args[1]+".second",true,()=>false,"user@example.org",false);
+                    }
+                }
                 catch(Exception ex) { Console.Error.WriteLine(ex); Environment.ExitCode=1; }
                 finally { form.Close(); }
             };
@@ -68,6 +95,8 @@ internal class Launcher {
         try:
             subprocess.run([exe,f'http://127.0.0.1:{server.server_port}/download',dest],check=True,timeout=100,
                            env=dict(os.environ,COMPASS_DATA=str(Path(os.environ['RUNNER_TEMP'])/'wv2-test')))
+            if Path(str(dest)+'.second').read_bytes()!=payload or Site.interactive_requests!=2:
+                raise AssertionError('Inline sign-in did not resume the private download.')
             if dest.read_bytes()!=payload or Site.requests_for_file!=2:
                 raise AssertionError('The post-login download did not deliver the workbook.')
         finally:

@@ -25,6 +25,9 @@ def configure(fields):
             if key not in core.DEFAULT or type(value) is not type(core.DEFAULT[key]):
                 continue
             changes[key] = value.strip()[:1400] if isinstance(value,str) else value
+        email=changes.get('accountEmail')
+        if email and (len(email)>254 or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',email)):
+            raise ValueError('Adj meg egy érvényes céges e-mail-címet.')
         current = core.STATE['config']
         cfg = current | changes
         if not 2000 <= cfg['fiscal'] <= 2200 or not 1 <= cfg['minutes'] <= 180:

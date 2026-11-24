@@ -1,5 +1,10 @@
 # SMC Compass · verziónapló
 
+## 1.2.7 · Egyetlen adatfrissítő gomb és beépített belépés
+
+- Az Adatfrissítés gomb minden beállított forrást frissít. A programverzió frissítése a Verziónaplóban található.
+- A Microsoft bejelentkezési felülete a Compass munkaterületén jelenik meg. A Források alatt beállítható a céges e-mail-cím és a WebView2 jelszómentési ajánlata.
+
 ## 1.2.6 · Sales-frissítés bejelentkezés után
 
 - Ha a SharePoint a letöltés helyett a webhely másik oldalára visz, a Compass egyszer újrakéri a munkafüzetet. A bejelentkezési ablakból kézzel is folytatható a letöltés.

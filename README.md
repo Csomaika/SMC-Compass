@@ -10,7 +10,7 @@ Natív, 64 bites Windows-alkalmazás PSD sales munkához. Havi forecast, kézi t
 
 ## Programfrissítés és verziónapló
 
-A **Programfrissítés** gomb ellenőrzi a `Csomaika/SMC-Compass` legfrissebb nyilvános GitHub-kiadását. Az MSI-vel telepített alkalmazás jóváhagyás után letölti a kiadás telepítőjét és ellenőrzi az SHA-256 lenyomatát. A Compass bezárul, majd elindítja a Windows Installert. Ha a Windows jóváhagyást kér, fogadd el, és a telepítés után nyisd meg újra a Compasst a Start menüből. A hordozható változat frissítésnél ellenőrzi a ZIP SHA-256 lenyomatát és külön verziómappát használ. A helyi beállítások és adatok a felhasználói adatmappában maradnak. A **Verziónapló** fülön a telepített verzió és a kiadástörténet olvasható.
+A **Verziónapló → Programfrissítés** gomb ellenőrzi a `Csomaika/SMC-Compass` legfrissebb nyilvános GitHub-kiadását. Az MSI-vel telepített alkalmazás jóváhagyás után letölti a kiadás telepítőjét és ellenőrzi az SHA-256 lenyomatát. A Compass bezárul, majd elindítja a Windows Installert. Ha a Windows jóváhagyást kér, fogadd el, és a telepítés után nyisd meg újra a Compasst a Start menüből. A hordozható változat frissítésnél ellenőrzi a ZIP SHA-256 lenyomatát és külön verziómappát használ. A helyi beállítások és adatok a felhasználói adatmappában maradnak. A **Verziónapló** fülön a telepített verzió és a kiadástörténet olvasható.
 
 ## Sales és SpeedUp
 
@@ -23,7 +23,7 @@ A **Programfrissítés** gomb ellenőrzi a `Csomaika/SMC-Compass` legfrissebb ny
 
 ## Automatikus forrásfrissítés
 
-**Sales-frissítés.** Mentsd a Sales SharePoint-linkjét a Források fülön, és válaszd az időzített böngészős Sales-forrást. A Compass az Edge WebView2 Runtime segítségével saját ideiglenes fájlba tölt, beolvassa és menti az adatokat, majd törli ezt a példányt. Az automatikus frissítés a beállított időközönként fut. Ha bejelentkezést kér, kattints a **Sales frissítése** gombra. A **Források → Külső böngésző használata egyszer** a korábbi módszert indítja, amely a böngésző Letöltések mappájába ment.
+**Sales-frissítés.** Mentsd a Sales SharePoint-linkjét a Források fülön, és válaszd az időzített böngészős Sales-forrást. A Compass az Edge WebView2 Runtime segítségével saját ideiglenes fájlba tölt, beolvassa és menti az adatokat, majd törli ezt a példányt. Az automatikus frissítés a beállított időközönként fut. Ha bejelentkezést kér, kattints az **Adatfrissítés** gombra. A Microsoft belépési oldala a Compassban jelenik meg. A Források fülön előre megadhatod a céges e-mail-címedet, és engedélyezheted, hogy a beépített böngésző felajánlja a jelszó mentését. A következő frissítés a korábbi munkamenetet használja, amíg érvényes. A **Források → Külső böngésző használata egyszer** a korábbi módszert indítja, amely a böngésző Letöltések mappájába ment.
 
 **OneDrive.** A Windows OneDrive-kliensben jelentkezz be a céges fiókba. Amikor az érintett Excel-fájl már megjelenik a Fájlkezelőben a céges OneDrive mappájában, válaszd ki a **Források** fülön a megfelelő **Tallózás…** gombbal, majd mentsd a beállításokat. A Sales és a SpeedUp forrásmódja külön állítható. A Compass futás közben 15 másodpercenként ellenőrzi a figyelt helyi fájlokat, és a OneDrive által átvett új mentést automatikusan importálja. A SharePoint munkafüzetet ez a művelet olvassa. A böngészőből letöltött XLSX kézi pillanatkép.
 
