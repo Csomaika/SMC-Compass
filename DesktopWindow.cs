@@ -54,6 +54,7 @@ internal sealed class DesktopWindow : Form
     private readonly Label sourcesStatus = Caption("",10,false);
     private readonly TextBox revisions = new TextBox { Dock = DockStyle.Fill, BorderStyle = BorderStyle.FixedSingle, Multiline = true,
         ReadOnly = true, ScrollBars = ScrollBars.Vertical, BackColor = Color.White, ForeColor = Ink, Font = new Font("Segoe UI",11) };
+    private readonly RefreshStrip refreshStrip=new RefreshStrip();
     private Button refreshBtn, exportBtn, updateBtn;
 
     private sealed class Pick
@@ -119,6 +120,7 @@ internal sealed class DesktopWindow : Form
             else if(HasWatchedFile())Run(() => RefreshData(false,false,true),true);
         };
         FormClosing += (s,e) => { if (busy && e.CloseReason == CloseReason.UserClosing) { e.Cancel=true; foot.Text="Művelet folyamatban. Várd meg a befejezést."; } };
+        Resize += (s,e)=>{hero.SyncMotion();refreshStrip.SyncMotion();};
         FormClosed += (s,e) => timer.Dispose();
     }
 
@@ -219,6 +221,7 @@ internal sealed class DesktopWindow : Form
         actions.Controls.Add(exportBtn);
         actions.Controls.Add(refreshBtn);
         head.Controls.Add(actions);
+        head.Controls.Add(refreshStrip);
         return head;
     }
 
@@ -255,7 +258,7 @@ internal sealed class DesktopWindow : Form
             item.Invalidate();
         }
         breadcrumb.Text="PSD   /   "+tabs.SelectedTab.Text;
-        if(tabs.SelectedIndex==0)hero.Animate();
+        if(tabs.SelectedIndex==0){hero.Animate();chart.Replay();}
     }
 
     private TabPage Page(string title)
@@ -873,6 +876,13 @@ internal sealed class DesktopWindow : Form
     }
 
     private async Task RefreshData(bool forced,bool announce,bool localOnly=false)
+    {
+        refreshStrip.SetWorking(true);
+        try { await ReadSources(forced,announce,localOnly); }
+        finally { if(!refreshStrip.IsDisposed)refreshStrip.SetWorking(false); }
+    }
+
+    private async Task ReadSources(bool forced,bool announce,bool localOnly)
     {
         if(!localOnly)nextRefresh=DateTime.UtcNow.AddMinutes(IntValue(Json.Get(Config,"minutes"),10));
         var result=await worker.CallAsync("refresh",Json.Fields("force",forced,"localOnly",localOnly));

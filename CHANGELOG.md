@@ -1,5 +1,10 @@
 # SMC Compass · verziónapló
 
+## 1.2.9 · Mozgás a munkaterületen
+
+- A menü kékeszöld jelölője finoman vált oldalt. Az Áttekintés megnyitásakor fénypont kíséri a felrajzolódó forecastot.
+- Adatfrissítés közben mozgó sáv jelenik meg a fejlécben. Az aktív forrásnál lassan pulzál a kapcsolatjelző. A mozgások követik a Windows animációs beállítását.
+
 ## 1.2.8 · Új Compass-ikon
 
 - Az új kék iránytű jelenik meg a Start menüben, a tálcán, az ablak címsorában és az alkalmazás oldalsávjában. Az ikon tíz méretben készült.

@@ -9,6 +9,18 @@ internal static class CompassStyle
     internal static readonly Color Navy=Color.FromArgb(8,30,55), Border=Color.FromArgb(220,230,241),
         Pale=Color.FromArgb(234,243,252), GreenPale=Color.FromArgb(229,247,242);
 
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool SystemParametersInfo(uint action, uint parameter, out int enabled, uint flags);
+
+    internal static bool MotionEnabled
+    {
+        get
+        {
+            int enabled;
+            return !SystemInformation.HighContrast && SystemParametersInfo(0x1042,0,out enabled,0) && enabled!=0;
+        }
+    }
+
     internal static GraphicsPath Round(RectangleF box,float radius)
     {
         var path=new GraphicsPath();
@@ -58,22 +70,60 @@ internal sealed class HeroPanel : Panel
 {
     private readonly Timer reveal=new Timer{Interval=23};
     private readonly Stopwatch watch=new Stopwatch();
-    private double light=1;
+    private double light=1, phase;
+    private readonly Stopwatch ambient = new Stopwatch();
+    private bool connected;
+    internal bool Connected
+    {
+        get { return connected; }
+        set { connected=value; SyncMotion(); }
+    }
     internal string Headline="Értékesítési előrejelzés", Subline="", Source="Adatforrás betöltése";
-    internal bool Connected;
 
     internal HeroPanel()
     {
         BackColor=Color.Transparent;
         DoubleBuffered=true;
         ResizeRedraw=true;
-        reveal.Tick+=(s,e)=>{light=Math.Min(1,watch.Elapsed.TotalMilliseconds/440);if(light>=1)reveal.Stop();Invalidate();};
+        reveal.Tick+=(s,e)=>{
+            if(!CanAnimate()){SyncMotion();return;}
+            light=Math.Min(1,watch.Elapsed.TotalMilliseconds/520);
+            phase=(ambient.Elapsed.TotalMilliseconds%2800)/2800;
+            if(light>=1&&!connected)reveal.Stop();
+            reveal.Interval=light<1?25:80;
+            Invalidate(new Rectangle(Math.Max(0,Width-330),0,Math.Min(330,Width),Height));
+        };
     }
 
     internal void Animate()
     {
-        if(!SystemInformation.IsMenuAnimationEnabled||!Visible||!IsHandleCreated){light=1;Invalidate();return;}
-        light=0;watch.Restart();reveal.Start();
+        light=0;watch.Restart();SyncMotion();
+    }
+
+    private bool CanAnimate()
+    {
+        var owner=FindForm();
+        return Visible&&IsHandleCreated&&owner!=null&&owner.WindowState!=FormWindowState.Minimized&&CompassStyle.MotionEnabled;
+    }
+
+    internal void SyncMotion()
+    {
+        if(!CanAnimate())
+        {
+            reveal.Stop();ambient.Stop();light=1;phase=0;
+        }
+        else if(connected||light<1)
+        {
+            ambient.Start();reveal.Interval=light<1?25:80;reveal.Start();
+        }
+        else {reveal.Stop();ambient.Stop();}
+        Invalidate();
+    }
+
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+        if(reveal!=null)SyncMotion();
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -94,6 +144,13 @@ internal sealed class HeroPanel : Panel
                 float radius=57+i*24+offset;
                 using(var pen=new Pen(Color.FromArgb(22+i*2,214,239,255),1))g.DrawEllipse(pen,center.X-radius,center.Y-radius,radius*2,radius*2);
             }
+            // A soft echo expands across the contour lines while the source is connected.
+            if(connected&&phase>0)
+            {
+                float radius=58+(float)phase*121;
+                using(var echo=new Pen(Color.FromArgb((int)(62*Math.Sin(Math.PI*phase)),98,234,238),2))
+                    g.DrawEllipse(echo,center.X-radius,center.Y-radius,radius*2,radius*2);
+            }
             g.Restore(clip);
         }
         using(var small=new Font("Segoe UI",10,FontStyle.Bold))
@@ -110,7 +167,14 @@ internal sealed class HeroPanel : Panel
             using(var pen=new Pen(Color.FromArgb(85,212,238,255)))
             using(var dot=new SolidBrush(Connected?Color.FromArgb(71,221,182):Color.FromArgb(255,192,103)))
             {
-                g.FillPath(tint,outline);g.DrawPath(pen,outline);g.FillEllipse(dot,pill.X+8,pill.Y+9,7,7);
+                g.FillPath(tint,outline);g.DrawPath(pen,outline);
+                if(connected&&phase>0)
+                {
+                    float r=4+(float)phase*5;
+                    using(var halo=new Pen(Color.FromArgb((int)(155*(1-phase)),105,255,224),1.6f))
+                        g.DrawEllipse(halo,pill.X+11.5f-r,pill.Y+12.5f-r,2*r,2*r);
+                }
+                g.FillEllipse(dot,pill.X+8,pill.Y+9,7,7);
             }
             Draw(g,Source,small,Color.White,new Rectangle((int)pill.X+19,(int)pill.Y,Math.Max(4,(int)pill.Width-23),25));
         }
@@ -149,7 +213,7 @@ internal sealed class KpiCard : Control
         bool changed=amount!=value;
         from=value??0;value=amount;note=description;accent=color;
         AccessibleDescription=DesktopWindow.Format(value,"db")+" · "+note;
-        if(changed&&IsHandleCreated&&Visible&&SystemInformation.IsMenuAnimationEnabled){progress=0;clock.Restart();timer.Start();}
+        if(changed&&IsHandleCreated&&Visible&&CompassStyle.MotionEnabled){progress=0;clock.Restart();timer.Start();}
         else if(changed){progress=1;timer.Stop();}
         Invalidate();
     }
@@ -185,13 +249,34 @@ internal sealed class KpiCard : Control
 
 internal sealed class NavButton : Button
 {
-    internal bool Active;
+    private readonly Timer transition=new Timer {Interval=20};
+    private readonly Stopwatch easeClock=new Stopwatch();
+    private bool active;
+    private double level, startLevel;
+    internal bool Active
+    {
+        get {return active;}
+        set
+        {
+            if(active==value)return;
+            active=value;startLevel=level;
+            if(Visible&&IsHandleCreated&&CompassStyle.MotionEnabled){easeClock.Restart();transition.Start();}
+            else {transition.Stop();level=active?1:0;}
+            Invalidate();
+        }
+    }
     private readonly string mark;
     private bool hot;
 
     internal NavButton(string label,string mark)
     {
         Text=label;this.mark=mark; AccessibleName=label;
+        transition.Tick+=(s,e)=>{
+            double t=Math.Min(1,easeClock.Elapsed.TotalMilliseconds/280);
+            level=startLevel+((active?1:0)-startLevel)*(1-Math.Pow(1-t,3));
+            if(t>=1)transition.Stop();
+            Invalidate();
+        };
         Width=195;Height=45;FlatStyle=FlatStyle.Flat;FlatAppearance.BorderSize=0;
         ForeColor=Color.White;BackColor=CompassStyle.Navy;
         Font=new Font("Segoe UI",10,FontStyle.Bold);
@@ -207,16 +292,68 @@ internal sealed class NavButton : Button
     protected override void OnPaint(PaintEventArgs e)
     {
         var g=e.Graphics;g.SmoothingMode=SmoothingMode.AntiAlias;g.Clear(CompassStyle.Navy);
-        if(Active||hot||Focused)
+        if(level>0||hot||Focused)
         {
             using(var frame=CompassStyle.Round(new RectangleF(0,1,Width-1,Height-2),8))
-            using(var fill=new SolidBrush(Active?Color.FromArgb(20,64,102):Color.FromArgb(20,51,80)))g.FillPath(fill,frame);
+            using(var fill=new SolidBrush(CompassStyle.Mix(hot||Focused?Color.FromArgb(20,51,80):CompassStyle.Navy,Color.FromArgb(19,76,117),level)))g.FillPath(fill,frame);
         }
-        if(Active)using(var glow=new Pen(Color.FromArgb(86,172,252),3))g.DrawLine(glow,2,9,2,Height-9);
+        if(level>0)
+        {
+            float half=(float)((Height/2-7)*level);
+            using(var glow=new Pen(Color.FromArgb((int)(255*level),83,224,233),3))
+                g.DrawLine(glow,3,Height/2-half,3,Height/2+half);
+        }
         Color text=Active||hot?Color.White:Color.FromArgb(184,207,230);
         HeroPanel.Draw(g,mark,Font,Color.FromArgb(139,195,245),new Rectangle(13,1,24,Height-2));
         HeroPanel.Draw(g,Text,Font,text,new Rectangle(42,1,Width-48,Height-2));
     }
+    protected override void Dispose(bool disposing){if(disposing)transition.Dispose();base.Dispose(disposing);}
+}
+
+// Indeterminate: SharePoint and local workbook reads do not expose a percentage.
+internal sealed class RefreshStrip : Control
+{
+    private readonly Timer timer=new Timer {Interval=33};
+    private readonly Stopwatch clock=new Stopwatch();
+    private bool working;
+    private double phase;
+
+    internal RefreshStrip()
+    {
+        Dock=DockStyle.Bottom;Height=4;TabStop=false;BackColor=Color.White;
+        DoubleBuffered=true;AccessibleRole=AccessibleRole.ProgressBar;AccessibleName="Adatfrissítés folyamatban";
+        timer.Tick+=(s,e)=>{phase=(clock.Elapsed.TotalMilliseconds%1500)/1500;Invalidate();};
+        Visible=false;
+    }
+
+    internal void SetWorking(bool value)
+    {
+        working=value;Visible=value;
+        if(value){BringToFront();clock.Restart();}else clock.Reset();
+        SyncMotion();
+    }
+
+    internal void SyncMotion()
+    {
+        var owner=FindForm();
+        bool moving=working&&Visible&&owner!=null&&owner.WindowState!=FormWindowState.Minimized&&CompassStyle.MotionEnabled;
+        timer.Enabled=moving;
+        if(!moving)phase=.5;
+        Invalidate();
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        if(Width<1||Height<1)return;
+        var g=e.Graphics;
+        g.Clear(CompassStyle.Pale);
+        float w=Math.Max(48,Width*.34f);
+        var segment=new RectangleF((float)((Width+w)*phase)-w,0,w,Height);
+        using(var brush=new LinearGradientBrush(segment,DesktopWindow.Blue,Color.FromArgb(46,214,202),0f))
+            g.FillRectangle(brush,segment);
+    }
+
+    protected override void Dispose(bool disposing){if(disposing)timer.Dispose();base.Dispose(disposing);}
 }
 
 internal sealed class NativePages : TabControl

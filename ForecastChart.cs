@@ -49,7 +49,7 @@ internal sealed class ForecastChart : Control
         ResizeRedraw=true;
         AccessibleName="Halmozott tény, terv és forecast hónaponként";
         animation.Tick+=(s,e)=>{
-            progress=Math.Min(1,clock.Elapsed.TotalMilliseconds/350.0);
+            progress=Math.Min(1,clock.Elapsed.TotalMilliseconds/930.0);
             if(progress>=1)animation.Stop();
             Invalidate();
         };
@@ -58,9 +58,14 @@ internal sealed class ForecastChart : Control
     internal void SetData(Dictionary<string,object> values)
     {
         series=values;
-        if(Visible&&IsHandleCreated&&SystemInformation.IsMenuAnimationEnabled)
+        Replay();
+    }
+
+    internal void Replay()
+    {
+        if(Visible&&IsHandleCreated&&CompassStyle.MotionEnabled)
         {
-            progress=.1;clock.Restart();animation.Start();
+            progress=0;clock.Restart();animation.Start();
         }
         else {animation.Stop();progress=1;}
         Invalidate();
@@ -128,7 +133,7 @@ internal sealed class ForecastChart : Control
                 g.DrawString(name,small,dim,X(i)-g.MeasureString(name,small).Width/2,bottom+7);
             }
             var reveal=g.Save();
-            double ease=1-Math.Pow(1-progress,3);
+            double ease=progress*(2-progress);
             g.SetClip(new RectangleF(LeftEdge-5,top-5,Math.Max(4,(float)((RightEdge-LeftEdge+11)*ease)),bottom-top+11));
             var shade=new List<PointF>();
             for(int i=0;i<12;i++){var item=Value("high",i);if(item.HasValue)shade.Add(new PointF(X(i),y(item.Value)));}
@@ -140,6 +145,26 @@ internal sealed class ForecastChart : Control
             Curve(g,"forecast",forecastColor,2.5f,DashStyle.Dash,y,false);
             Curve(g,"actual",actualColor,3,DashStyle.Solid,y,true);
             g.Restore(reveal);
+            if(progress>0 && progress<1 && numbers.Count>0)
+            {
+                double month=ease*11;
+                int index=(int)month;
+                string key=Value("actual",index+1).HasValue?"actual":"forecast";
+                var a=Value(key,index);var b=Value(key,index+1);
+                if(a.HasValue&&b.HasValue)
+                {
+                    float cx=LeftEdge+(float)ease*(RightEdge-LeftEdge);
+                    float cy=y(a.Value+(b.Value-a.Value)*(month-index));
+                    Color color=key=="actual"?actualColor:forecastColor;
+                    using(var halo=new SolidBrush(Color.FromArgb(54,color)))
+                    using(var core=new SolidBrush(color))
+                    {
+                        g.FillEllipse(halo,cx-9,cy-9,18,18);
+                        g.FillEllipse(core,cx-4,cy-4,8,8);
+                        g.DrawEllipse(Pens.White,cx-4,cy-4,8,8);
+                    }
+                }
+            }
             if(hover>=0)using(var line=new Pen(Color.FromArgb(130,DesktopWindow.Blue),1){DashStyle=DashStyle.Dash})g.DrawLine(line,X(hover),top,X(hover),bottom);
             var legend=new[]{"Tény","Terv","Forecast","Előző FY","Forgatókönyv-tartomány"};
             var colors=new[]{actualColor,planColor,forecastColor,previousColor,bandColor};
@@ -155,7 +180,7 @@ internal sealed class ForecastChart : Control
 
     private void Curve(Graphics g,string name,Color color,float weight,DashStyle dash,Func<double,float> y,bool points)
     {
-        using(var pen=new Pen(Color.FromArgb((int)(255*progress),color),weight){DashStyle=dash,LineJoin=LineJoin.Round})
+        using(var pen=new Pen(color,weight){DashStyle=dash,LineJoin=LineJoin.Round})
         using(var dot=new SolidBrush(color))
         {
             PointF? previous=null;
