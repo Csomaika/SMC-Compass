@@ -50,7 +50,8 @@ jobs:
           $check = (Resolve-Path dist/check/SMC-Compass).Path
           $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
           $test = Join-Path $check 'AnimationCheck.exe'
-          & $csc /nologo /platform:x64 /target:exe /codepage:65001 /main:AnimationCheck "/out:$test" /reference:System.Web.Extensions.dll "/reference:$check\Microsoft.Web.WebView2.Core.dll" "/reference:$check\Microsoft.Web.WebView2.WinForms.dll" tests/AnimationCheck.cs Launcher.cs DesktopWindow.cs ForecastChart.cs ModernStyle.cs SalesDownload.cs
+          $testSource = (Resolve-Path tests/AnimationCheck.cs).Path
+          & $csc /nologo /platform:x64 /target:exe /codepage:65001 /main:AnimationCheck "/out:$test" /reference:System.Web.Extensions.dll "/reference:$check\Microsoft.Web.WebView2.Core.dll" "/reference:$check\Microsoft.Web.WebView2.WinForms.dll" $testSource Launcher.cs DesktopWindow.cs ForecastChart.cs ModernStyle.cs SalesDownload.cs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
