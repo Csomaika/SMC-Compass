@@ -36,6 +36,8 @@ def configure(fields):
             raise ValueError('Érvénytelen adatforrásmód.')
         if cfg['salesSource'] not in ('','manual','local','sharepoint','browser') or cfg['buyersSource'] not in ('','manual','local','sharepoint'):
             raise ValueError('Érvénytelen munkafüzet-forrásmód.')
+        if 'sugarUrl' in changes and cfg['sugarUrl']:
+            _, cfg['sugarUrl'] = core.sugar_urls(cfg['sugarUrl'])
         if any(cfg[k] != current[k] for k in ('tenant','client','salesUrl','buyersUrl','source','salesSource','buyersSource')):
             core.SESSION['sp'] = {}
             DEVICE.clear()
@@ -43,8 +45,9 @@ def configure(fields):
             if (core.source_mode(kind,current)!=core.source_mode(kind,cfg) or cfg[kind+'Path']!=current[kind+'Path']):
                 core.LOCAL_CHECKS.pop(kind,None)
                 core.CHECKS.pop(kind,None)
-        if any(cfg[k] != current[k] for k in ('sugarUrl','sugarApi')):
-            core.SESSION['sugar'] = ''
+        if any(cfg[k] != current[k] for k in ('sugarUrl','sugarApi','sugarPlatform')):
+            core.sugar_reset()
+            core.status('sugar','Sugar beállítva. Csatlakozz az API-hoz a Források lapon.' if cfg['sugarUrl'] else 'Sugar-adatforrás beállítása szükséges.', mode='Sugar REST')
         core.STATE['config'] = cfg
         core.save()
 
@@ -205,16 +208,26 @@ def poll_browser_sales():
 
 
 def sugar(data):
+    config = core.STATE['config'].copy()
     token = str(data.get('token','')).strip()
-    if not token or len(token)>8000 or not token.isascii() or any(c.isspace() for c in token):
-        raise ValueError('Érvényes Sugar access token szükséges.')
-    core.SESSION['sugar'] = token
+    username = str(data.get('username','')).strip()
+    password = data.get('password','')
     try:
-        core.sugar_import(core.STATE['config'].copy())
-    except Exception:
-        core.SESSION['sugar'] = ''
+        if token:
+            if not core.sugar_token_valid(token):
+                raise ValueError('Érvényes Sugar access token szükséges.')
+            core.sugar_reset()
+            core.SESSION['sugar'] = token
+        elif username or password:
+            if not username or not isinstance(password,str) or not password or len(password)>2000:
+                raise ValueError('Add meg az engedélyezett API-fiók felhasználónevét és jelszavát.')
+            core.sugar_auth(config, grant_type='password', username=username, password=password)
+        core.sugar_import(config)
+    except ValueError as error:
+        with core.WRITE:
+            core.status('sugar',str(error),mode='Sugar REST')
+            core.save()
         raise
-
 
 def start_signin():
     endpoint, client, scope = core.microsoft_details(core.STATE['config'])
@@ -262,6 +275,9 @@ def poll_signin():
 def dispatch(action, data):
     if action=='state':
         return core.snapshot()
+    if action=='sugar-web':
+        _, browser = core.sugar_urls(data.get('url','') or core.STATE['config']['sugarUrl'])
+        return {'url':browser}
     if action=='forecast':
         return core.scenario(*core.forecast_args(data))
     if action=='refresh':

@@ -55,7 +55,8 @@ internal sealed class DesktopWindow : Form
         entryMonth = Picker(), owners = Picker();
     private readonly CheckBox visible = new CheckBox { Text = "Csak az Excelben látható sorok", Checked = true, AutoSize = true, Margin = new Padding(10,11,8,0) };
     private readonly TextBox entryAmount = Edit(120), entryNote = Edit(240), target = Edit(125), newYear = Edit(74);
-    private readonly TextBox buyerSearch = Edit(230), sugarSearch = Edit(230), sugarToken = Edit(260);
+    private readonly TextBox buyerSearch = Edit(230), sugarSearch = Edit(230), sugarToken = Edit(260),
+        sugarUsername = Edit(260), sugarPassword = Edit(260);
     private readonly DataGridView monthly = Grid(), buyers = Grid(), pipeline = Grid();
     private readonly Dictionary<string,MatrixTile> boxes = new Dictionary<string,MatrixTile>();
     private readonly Dictionary<string,Control> settings = new Dictionary<string,Control>();
@@ -539,7 +540,8 @@ internal sealed class DesktopWindow : Form
     {
         var layout=Frame(44,70,0); page.Controls.Add(layout);
         var filter=Row(); AddField(filter,"Keresés",sugarSearch);
-        var open=Button("Sugar beállítása",false);open.Click+=(s,e)=>tabs.SelectedIndex=4;filter.Controls.Add(open);
+        var setup=Button("Sugar beállítása",false);setup.Click+=(s,e)=>tabs.SelectedIndex=4;filter.Controls.Add(setup);
+        filter.Controls.Add(Action("Sugar megnyitása",OpenSugar));
         layout.Controls.Add(filter,0,0);
         sugarNote.Dock=DockStyle.Fill; sugarNote.TextAlign=ContentAlignment.MiddleLeft;
         layout.Controls.Add(sugarNote,0,1);
@@ -584,12 +586,20 @@ internal sealed class DesktopWindow : Form
         Setting(list,"Microsoft client ID","client",Edit(450));
         voidRow(list,Action("Microsoft-belépés eszközkóddal",MicrosoftSignIn));
         voidRow(list,Caption("Sugar CRM · Opportunities",13,true));
-        Setting(list,"Sugar HTTPS alapcím","sugarUrl",Edit(480));
+        Setting(list,"Sugar webes címe","sugarUrl",Edit(480));
         Setting(list,"Sugar REST-verzió","sugarApi",Edit(115));
         Setting(list,"Csak a saját lehetőségek","sugarMine",new CheckBox { AutoSize=true });
+        voidRow(list,Caption("A teljes Sugar-link bemásolható. Az importhoz engedélyezett API-fiók vagy REST access token kell.",9,false));
+        Setting(list,"Engedélyezett Sugar API-platform","sugarPlatform",Edit(220));
+        Setting(list,"Sugar API-felhasználó",null,sugarUsername);
+        sugarPassword.UseSystemPasswordChar=true;
+        Setting(list,"Sugar API-jelszó",null,sugarPassword);
         sugarToken.UseSystemPasswordChar=true;
-        Setting(list,"Sugar REST access token",null,sugarToken);
-        voidRow(list,Action("Mentés és Sugar-import",SugarImport));
+        Setting(list,"Sugar REST access token (opció)",null,sugarToken);
+        var sugarActions=Row();sugarActions.AutoSize=true;
+        sugarActions.Controls.Add(Action("Kapcsolódás és import",SugarImport,true));
+        sugarActions.Controls.Add(Action("Sugar megnyitása",OpenSugar));
+        voidRow(list,sugarActions);
     }
 
     private static void voidRow(TableLayoutPanel list, Control content)
@@ -910,8 +920,13 @@ internal sealed class DesktopWindow : Form
             }
             pipeline.Rows.Add(Json.Text(row,"name"),Json.Text(row,"account_name"),stage,Format(amount,currency),Format(probability,"%"),Json.Text(row,"date_closed"),Json.Text(row,"assigned_user_name"));
         }
+        var connection=Source("sugar");
+        string statusText=Json.Text(connection,"message",String.IsNullOrEmpty(Json.Text(Config,"sugarUrl"))
+            ?"Sugar-adatforrás beállítása szükséges.":"Kapcsolódj a Sugar API-hoz a Források lapon.");
+        if(Json.Flag(connection,"ok")&&!Json.Flag(state,"sugarConnected"))
+            statusText="Az utolsó import látható. Az élő frissítéshez kapcsolódj újra a Források lapon.";
         sugarNote.Text=String.Format("{0} lehetőség   |   {1}\r\nSúlyozott nyitott pipeline  ·  {2}",data.Count,
-            Json.Text(Source("sugar"),"message","Sugar-adatforrás beállítása szükséges."),groups.Count>0?String.Join("   /   ",groups.Select(g=>Format(g.Value,g.Key))):"—");
+            statusText,groups.Count>0?String.Join("   /   ",groups.Select(g=>Format(g.Value,g.Key))):"—");
     }
 
     private Dictionary<string,object> Source(string key)
@@ -1125,12 +1140,35 @@ internal sealed class DesktopWindow : Form
         }
     }
 
+    private async Task OpenSugar()
+    {
+        var address=((TextBox)settings["sugarUrl"]).Text.Trim();
+        if(address.Length==0)
+        {
+            tabs.SelectedIndex=4;
+            ((TextBox)settings["sugarUrl"]).Focus();
+            foot.Text="Add meg a Sugar webes címét.";
+            return;
+        }
+        var result=await worker.CallAsync("sugar-web",Json.Fields("url",address));
+        Launcher.OpenWeb(Json.Text(result,"url"));
+        foot.Text="A Sugar megnyílt a böngészőben.";
+    }
+
     private async Task SugarImport()
     {
-        string token=sugarToken.Text;sugarToken.Clear();
-        await SaveSources();
-        if(token.Length>0)await worker.CallAsync("sugar",Json.Fields("token",token));
-        await RefreshState(false);foot.Text=token.Length>0?"Sugar-adatok importálva.":"Sugar-beállítások mentve.";
+        var sugarSettings=ReadSettings().Where(entry=>entry.Key.StartsWith("sugar",StringComparison.Ordinal))
+            .ToDictionary(entry=>entry.Key,entry=>entry.Value);
+        var credentials=Json.Fields("token",sugarToken.Text,"username",sugarUsername.Text,"password",sugarPassword.Text);
+        sugarToken.Clear();sugarPassword.Clear();
+        await worker.CallAsync("config",sugarSettings);
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo failure=null;
+        try { await worker.CallAsync("sugar",credentials); }
+        catch(InvalidOperationException error) { failure=System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error); }
+        await RefreshState(false);
+        if(failure!=null)failure.Throw();
+        tabs.SelectedIndex=3;
+        foot.Text="Sugar-adatok importálva.";
     }
 
     private async Task MicrosoftSignIn()

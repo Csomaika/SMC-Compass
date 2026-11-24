@@ -1,5 +1,11 @@
 # SMC Compass · verziónapló
 
+## 1.2.16 · Sugar CRM csatlakozás
+
+- A teljes Sugar-böngészőlink használható. A weboldal megnyitása és az Opportunities REST-import külön művelet.
+- A Sugar-import önállóan fut. Az engedélyezett Sugar API-platformhoz tartozó OAuth-belépés futás közben tud tokent megújítani. A kézzel megadott REST token továbbra is használható.
+- A pipeline jelzi az érvénytelen vagy lejárt tokent, a hiányzó olvasási engedélyt és az API helyett érkező webes belépést.
+
 ## 1.2.15 · Oldalsáv megjelenítési javítása
 
 - A menüpontok minden képkocka előtt újrarajzolják saját hátterüket. Ez javítja a maximalizált ablakban lapváltáskor összecsúszó feliratokat.

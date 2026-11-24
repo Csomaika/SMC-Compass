@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock, RLock
-from urllib.error import HTTPError
-from urllib.parse import parse_qs, urlencode, urlsplit
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 import hashlib
 import io
@@ -22,7 +22,7 @@ MONTHS = 'Ápr Máj Jún Júl Aug Szept Okt Nov Dec Jan Feb Márc'.split()
 DEFAULT = dict(salesUrl='', buyersUrl='', salesPath='', buyersPath='', salesSheet='REPORT26', previousSheet='REPORT25',
                buyersSheet='Munka1', fiscal=2026, minutes=10, source='local', tenant='', client='',
                salesSource='', buyersSource='', salesDownloadName='', salesDownloadFolder='',accountEmail='',rememberLogin=False,
-               sugarUrl='', sugarApi='v11', sugarMine=True)
+               sugarUrl='', sugarApi='v11', sugarMine=True, sugarPlatform='smc_compass')
 PROFILE_FILE = HERE/'compass-profile.json'
 PROFILE = json.loads(PROFILE_FILE.read_text(encoding='utf-8-sig')) if PROFILE_FILE.is_file() else {}
 DEFAULT.update({key:value for key,value in PROFILE.items() if key in DEFAULT and type(value) is type(DEFAULT[key])})
@@ -30,7 +30,7 @@ HOME = Path(os.environ.get('COMPASS_DATA', Path(os.environ.get('LOCALAPPDATA', P
 FILE = HOME/'compass.json'
 WRITE = RLock()
 SYNC = Lock()
-SESSION = {'sp': {}, 'sugar': ''}
+SESSION = {'sp': {}, 'sugar': '', 'sugarRefresh': '', 'sugarExpires': 0}
 CHECKS = {}
 LOCAL_CHECKS = {}
 STATE = {'config': DEFAULT.copy(), 'series': {}, 'salesSheets': [], 'buyers': {}, 'manual': {}, 'scores': {},
@@ -82,6 +82,12 @@ class NoRedirect(HTTPRedirectHandler):
         return None
 
 
+class HttpStatusError(ValueError):
+    def __init__(self, code):
+        self.code = code
+        super().__init__(f'A szerver HTTP {code} választ adott. Ellenőrizd az URL-t és a jogosultságot.')
+
+
 def http(url, fields=None, headers=None, form=False):
     body = None if fields is None else (urlencode(fields).encode() if form else json.dumps(fields).encode())
     safe_headers = {'Accept':'application/json', **(headers or {})}
@@ -91,7 +97,7 @@ def http(url, fields=None, headers=None, form=False):
         with build_opener(NoRedirect).open(Request(url, data=body, headers=safe_headers), timeout=25) as response:
             content = response.read(LIMIT+1)
     except HTTPError as error:
-        raise ValueError(f'A szerver HTTP {error.code} választ adott. Ellenőrizd az URL-t és a jogosultságot.') from None
+        raise HttpStatusError(error.code) from None
     if len(content) > LIMIT:
         raise ValueError('A forrásfájl meghaladja a 35 MB méretkorlátot.')
     return content
@@ -206,16 +212,73 @@ def ingest(kind, data, config, mode, force=False):
     return True
 
 
-def sugar_import(config):
-    url = urlsplit(config['sugarUrl'].strip())
-    if url.scheme!='https' or not url.hostname or url.username or url.password or url.query or url.fragment:
-        raise ValueError('Add meg a Sugar példány HTTPS alapcímét.')
-    version = config['sugarApi']
-    if not re.fullmatch(r'v11(?:_\d{1,3})?',version):
+def sugar_urls(address):
+    """Return the installation base and the original browser route separately."""
+    url = urlsplit(address.strip())
+    path = re.split(r'/(?:index\.php|rest/v\d+(?:_\d+)?)(?:/|$)', url.path.rstrip('/'), maxsplit=1, flags=re.I)[0]
+    if (url.scheme != 'https' or not url.hostname or url.username is not None or url.password is not None or
+            not re.fullmatch(r'[a-z0-9.-]+(?::[0-9]+)?', url.netloc, re.I) or
+            not re.fullmatch(r'(?:/[A-Za-z0-9_.~-]+)*', path) or any(part in ('.','..') for part in path.split('/'))):
+        raise ValueError('Adj meg egy érvényes Sugar HTTPS-címet. A teljes böngészős link bemásolható.')
+    base = urlunsplit(('https', url.netloc.lower(), path, '', ''))
+    browser = urlunsplit(('https', url.netloc.lower(), url.path or '/', '', url.fragment))
+    return base, browser
+
+
+def sugar_rest(config):
+    base, _ = sugar_urls(config['sugarUrl'])
+    version = config['sugarApi'] or 'v11'
+    if not re.fullmatch(r'v11(?:_\d{1,3})?', version):
         raise ValueError('Sugar REST-verzió formátuma: v11 vagy például v11_24.')
-    if not SESSION['sugar']:
-        raise ValueError('Adj meg egy érvényes Sugar REST access tokent a munkamenethez.')
-    root = config['sugarUrl'].rstrip('/')+f'/rest/{version}/Opportunities/filter'
+    return base + '/rest/' + version
+
+
+def sugar_reset():
+    SESSION.update(sugar='', sugarRefresh='', sugarExpires=0)
+
+
+def sugar_json(url, fields=None, token=None):
+    try:
+        raw = http(url, fields=fields, headers={'OAuth-Token': token} if token else None)
+        payload = json.loads(raw)
+    except (URLError, TimeoutError):
+        raise ValueError('A Sugar szerver nem érhető el. Ellenőrizd a hálózatot és a címet.') from None
+    except (json.JSONDecodeError, UnicodeError):
+        raise ValueError('A Sugar JSON-válasza helyett weboldal érkezett. Ellenőrizd az API-címet és a hitelesítést.') from None
+    if not isinstance(payload, dict):
+        raise ValueError('A Sugar REST válasz formátuma nem megfelelő.')
+    return payload
+
+
+def sugar_auth(config, **grant):
+    platform = config['sugarPlatform']
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{1,63}', platform) or platform.lower() in ('base','mobile','portal'):
+        raise ValueError('A belépéshez a Sugar-rendszergazda által engedélyezett, külön API-platform neve szükséges.')
+    try:
+        reply = sugar_json(sugar_rest(config)+'/oauth2/token', dict(client_id='sugar',client_secret='',platform=platform,**grant))
+    except HttpStatusError as error:
+        if error.code in (400,401,403):
+            if grant['grant_type']=='refresh_token':
+                sugar_reset()
+                raise ValueError('A Sugar API-munkamenet lejárt. Kapcsolódj újra a Források lapon.') from None
+            raise ValueError('A Sugar elutasította az API-belépést. Ellenőrizd az API-fiókot és az engedélyezett platformot a Sugar-adminnál.') from None
+        if 300 <= error.code < 400:
+            raise ValueError('A Sugar webes belépésre irányította az API-kérést. Kérj jóváhagyott API-hozzáférést a Sugar-adminnál.') from None
+        raise
+    token = reply.get('access_token')
+    if not sugar_token_valid(token):
+        raise ValueError('A Sugar nem adott érvényes REST access tokent.')
+    refresh_token = reply.get('refresh_token')
+    expires = reply.get('expires_in')
+    expires_at = time.monotonic()+max(0, expires-30) if isinstance(expires, (int,float)) and 0<expires<10**8 else 0
+    SESSION.update(sugar=token, sugarRefresh=refresh_token if sugar_token_valid(refresh_token) else '', sugarExpires=expires_at)
+
+
+def sugar_token_valid(token):
+    return isinstance(token, str) and 0 < len(token) <= 8000 and token.isascii() and token.isprintable() and not any(c.isspace() for c in token)
+
+
+def sugar_records(root, config):
     fields = 'id,name,account_name,date_closed,sales_stage,amount,probability,currency_id,currency_iso,assigned_user_name'
     offset, records, seen = 0, {}, set()
     while offset >= 0:
@@ -224,17 +287,47 @@ def sugar_import(config):
         seen.add(offset)
         params = dict(fields=fields, max_num=100, offset=offset, order_by='id:ASC')
         if config['sugarMine']:
-            params['my_items'] = 'true'
-        reply = json.loads(http(root+'?'+urlencode(params), headers={'OAuth-Token':SESSION['sugar']}))
-        for row in reply['records']:
-            if row.get('id'):
+            params['filter[0][$owner]'] = '_this'
+        reply = sugar_json(root+'/Opportunities/filter?'+urlencode(params), token=SESSION['sugar'])
+        page = reply.get('records')
+        offset = reply.get('next_offset')
+        if not isinstance(page,list) or type(offset) is not int or offset < -1:
+            raise ValueError('A Sugar REST nem adott teljes Opportunities listát. A korábbi adatok megmaradtak.')
+        for row in page:
+            if isinstance(row,dict) and row.get('id'):
                 records[row['id']] = {field:row.get(field) for field in fields.split(',')}
-        offset = int(reply['next_offset'])
-    with WRITE:
-        STATE['opportunities'] = list(records.values())
-        status('sugar',f'{len(records)} lehetőség', True,'Sugar REST')
-        save()
+    return list(records.values())
 
+
+def sugar_import(config):
+    root = sugar_rest(config)
+    if not SESSION['sugar']:
+        raise ValueError('Kapcsolódj Sugar API-fiókkal, vagy adj meg érvényes REST access tokent a Források lapon.')
+    if SESSION['sugarRefresh'] and SESSION['sugarExpires'] and time.monotonic() >= SESSION['sugarExpires']:
+        sugar_auth(config, grant_type='refresh_token', refresh_token=SESSION['sugarRefresh'])
+    try:
+        try:
+            records = sugar_records(root, config)
+        except HttpStatusError as error:
+            if error.code != 401 or not SESSION['sugarRefresh']:
+                raise
+            sugar_auth(config, grant_type='refresh_token', refresh_token=SESSION['sugarRefresh'])
+            records = sugar_records(root, config)
+    except HttpStatusError as error:
+        if error.code == 401:
+            sugar_reset()
+            raise ValueError('A Sugar REST token lejárt vagy érvénytelen. Kapcsolódj újra a Források lapon.') from None
+        if error.code == 403:
+            raise ValueError('A Sugar-fióknak nincs olvasási jogosultsága az Opportunities modulhoz.') from None
+        if error.code == 404:
+            raise ValueError('A Sugar REST útvonal nem található. Ellenőrizd a címet és az API-verziót.') from None
+        if 300 <= error.code < 400:
+            raise ValueError('A Sugar webes belépésre irányította az API-kérést. Ellenőrizd a REST-hozzáférést.') from None
+        raise
+    with WRITE:
+        STATE['opportunities'] = records
+        status('sugar',f'{len(records)} lehetőség · Sugar REST', True,'Sugar REST')
+        save()
 
 def refresh(force=False, local_only=False):
     if not SYNC.acquire(blocking=False):
