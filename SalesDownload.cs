@@ -28,6 +28,8 @@ internal static class SalesDownload
             var done=new TaskCompletionSource<bool>();
             CoreWebView2DownloadOperation active=null;
             bool closed=false;
+            DateTime? pageReady=null;
+            web.NavigationStarting+=(s,e)=>{pageReady=null;};
             resume.Click+=(s,e)=>{ if(active==null&&!done.Task.IsCompleted)web.Navigate(url); };
             login.FormClosing+=(s,e)=>{ e.Cancel=true;closed=true;login.Hide(); };
             web.NewWindowRequested+=(s,e)=>{e.Handled=true;};
@@ -59,28 +61,20 @@ internal static class SalesDownload
                     owner.BeginInvoke(new Action(()=>{if(active==null&&!done.Task.IsCompleted)web.Navigate(url);}));
                     return;
                 }
-                if(interactive && !login.Visible)login.Show(owner);
-                else if(!interactive)done.TrySetException(new InvalidOperationException(
-                    "SharePoint-bejelentkezés vagy jóváhagyás szükséges. Kattints a Sales frissítése gombra."));
+                // Attachment navigations may finish before WebView2 raises DownloadStarting.
+                pageReady=DateTime.UtcNow;
             };
             try
             {
                 web.Navigate(url);
                 var deadline=DateTime.UtcNow.AddMinutes(interactive?5:2);
-                string previousPage=null;
-                DateTime pageSince=DateTime.UtcNow;
                 while(!done.Task.IsCompleted)
                 {
-                    string current=web.Source;
-                    if(current!=previousPage){previousPage=current;pageSince=DateTime.UtcNow;}
-                    Uri stable;
-                    if(!retried && active==null && (DateTime.UtcNow-pageSince).TotalSeconds>=2
-                        && Uri.TryCreate(current,UriKind.Absolute,out stable)
-                        && stable.Scheme==source.Scheme && stable.Authority==source.Authority
-                        && stable.AbsolutePath!=source.AbsolutePath)
+                    if(active==null && pageReady.HasValue && (DateTime.UtcNow-pageReady.Value).TotalSeconds>=4)
                     {
-                        retried=true;
-                        web.Navigate(url);
+                        pageReady=null;
+                        if(!interactive)throw new InvalidOperationException("SharePoint-bejelentkezés vagy jóváhagyás szükséges. Kattints a Sales frissítése gombra.");
+                        if(!login.Visible)login.Show(owner);
                     }
                     if(closed||canceled())throw new OperationCanceledException("A Sales-frissítés megszakítva.");
                     if(DateTime.UtcNow>=deadline)throw new TimeoutException("Nem érkezett meg a Sales Excel. A Források fülön a külső böngészővel is próbálkozhatsz.");
