@@ -78,6 +78,14 @@ internal static class AnimationCheck
             var card=new KpiCard("Tény YTD","↗") { Bounds=new Rectangle(215,169,255,100) };
             var nav=new NavButton("Áttekintés","▤") { Location=new Point(10,12) };
             var strip=new RefreshStrip();
+            var matrix=new MatrixTile[9];
+            for(int i=0;i<matrix.Length;i++)
+            {
+                matrix[i]=new MatrixTile(3-i/3,i%3+1) {
+                    Dock=DockStyle.None, Bounds=new Rectangle(490+(i%3)*245,163+(i/3)*38,228,36)
+                };
+                window.Controls.Add(matrix[i]);
+            }
             window.Controls.AddRange(new Control[]{hero,chart,card,nav,strip});
             var clock=new Stopwatch();
             var samples=new[]{
@@ -85,7 +93,8 @@ internal static class AnimationCheck
                 new PaintSamples(chart,"Forecast chart",clock),
                 new PaintSamples(card,"KPI card",clock),
                 new PaintSamples(nav,"Navigation",clock),
-                new PaintSamples(strip,"Refresh strip",clock)
+                new PaintSamples(strip,"Refresh strip",clock),
+                new PaintSamples(matrix[0],"Matrix tile",clock)
             };
             window.Shown+=async (sender,args)=>{
                 try
@@ -102,6 +111,7 @@ internal static class AnimationCheck
                     nav.Active=true;
                     card.Display(938,"Okt · 7 hónap",DesktopWindow.Blue);
                     strip.SetWorking(true);
+                    for(int i=0;i<matrix.Length;i++)matrix[i].Display(i+1,45,i==0);
                     await Task.Delay(1250);
                     clock.Stop();
                     foreach(var item in samples)item.Check();

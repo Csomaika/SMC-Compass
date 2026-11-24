@@ -36,7 +36,12 @@ internal sealed class DesktopWindow : Form
     private readonly NavButton[] navigation = new NavButton[6];
     private readonly Label foot = Caption("Indítás…",10,false);
     private readonly Label chartNote = Caption("",10,false);
-    private readonly Label matrixNote = Caption("",10,false);
+    private readonly Label matrixNote = Caption("",9,false);
+    private readonly Label matrixTotal = Caption("",25,true);
+    private readonly Label matrixRanked = Caption("",10,true);
+    private readonly Label matrixSelection = Caption("",10,true);
+    private Button matrixReset, matrixUnrated;
+    private const string UnratedCustomers = "unrated";
     private readonly Label sugarNote = Caption("",10,false);
     private readonly Label inputNote = Caption("",10,false);
     private readonly KpiCard[] cards = new KpiCard[4];
@@ -49,7 +54,7 @@ internal sealed class DesktopWindow : Form
     private readonly TextBox entryAmount = Edit(120), entryNote = Edit(240), target = Edit(125), newYear = Edit(74);
     private readonly TextBox buyerSearch = Edit(230), sugarSearch = Edit(230), sugarToken = Edit(260);
     private readonly DataGridView monthly = Grid(), buyers = Grid(), pipeline = Grid();
-    private readonly Dictionary<string,Button> boxes = new Dictionary<string,Button>();
+    private readonly Dictionary<string,MatrixTile> boxes = new Dictionary<string,MatrixTile>();
     private readonly Dictionary<string,Control> settings = new Dictionary<string,Control>();
     private readonly Label sourcesStatus = Caption("",10,false);
     private readonly TextBox revisions = new TextBox { Dock = DockStyle.Fill, BorderStyle = BorderStyle.FixedSingle, Multiline = true,
@@ -423,37 +428,100 @@ internal sealed class DesktopWindow : Form
 
     private void BuildMatrix(TabPage page)
     {
-        var layout=Frame(38,190,43,0);
+        var layout=Frame(300,46,26,0,28);
         page.Controls.Add(layout);
-        matrixNote.Dock=DockStyle.Fill; matrixNote.TextAlign=ContentAlignment.MiddleLeft;
-        layout.Controls.Add(matrixNote,0,0);
-        var upper = new TableLayoutPanel { Dock=DockStyle.Fill, ColumnCount=2, RowCount=1 };
-        upper.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,64));
-        upper.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,36));
-        var board = new TableLayoutPanel { Dock=DockStyle.Fill, ColumnCount=3, RowCount=3 };
-        for (int i=0;i<3;i++) { board.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100f/3)); board.RowStyles.Add(new RowStyle(SizeType.Percent,100f/3)); }
-        for(int row=0;row<3;row++) for(int col=0;col<3;col++)
+        var upper=new TableLayoutPanel { Dock=DockStyle.Fill, ColumnCount=2, RowCount=1, Margin=new Padding(2,3,3,7) };
+        upper.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
+        upper.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,264));
+        var surface=new CardPanel { Dock=DockStyle.Fill, Padding=new Padding(12,8,12,7), Margin=new Padding(0,0,8,0) };
+        upper.Controls.Add(surface,0,0);
+        var board=new TableLayoutPanel { Dock=DockStyle.Fill, ColumnCount=4, RowCount=6, BackColor=Color.White };
+        surface.Controls.Add(board);
+        board.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,78));
+        for(int i=0;i<3;i++)board.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100f/3));
+        board.RowStyles.Add(new RowStyle(SizeType.Absolute,29));
+        for(int i=0;i<3;i++)board.RowStyles.Add(new RowStyle(SizeType.Percent,100f/3));
+        board.RowStyles.Add(new RowStyle(SizeType.Absolute,22));
+        board.RowStyles.Add(new RowStyle(SizeType.Absolute,22));
+
+        var potential=MatrixAxis("↑  PIACI POTENCIÁL",ContentAlignment.MiddleLeft);
+        board.Controls.Add(potential,0,0);
+        board.SetColumnSpan(potential,4);
+        var position=MatrixAxis("SMC-POZÍCIÓ  →",ContentAlignment.MiddleCenter);
+        board.Controls.Add(position,1,5);
+        board.SetColumnSpan(position,3);
+
+        string[] levels={"Alacsony","Közepes","Magas"};
+        for(int i=0;i<3;i++)
+        {
+            board.Controls.Add(MatrixAxis((3-i)+"  "+levels[2-i],ContentAlignment.MiddleLeft),0,i+1);
+            board.Controls.Add(MatrixAxis((i+1)+"  "+levels[i],ContentAlignment.MiddleCenter),i+1,4);
+        }
+        for(int row=0;row<3;row++)for(int col=0;col<3;col++)
         {
             string key=(3-row)+"-"+(col+1);
-            var square=Button("",false); square.Dock=DockStyle.Fill; square.Margin=new Padding(2); square.AutoSize=false;
-            square.Click += (s,e) => { boxFilter=boxFilter==key?"":key;FillCustomers(); };
-            boxes[key]=square;
-            board.Controls.Add(square,col,row);
+            var tile=new MatrixTile(3-row,col+1);
+            tile.Click+=(s,e)=>SelectMatrixBox(boxFilter==key?"":key);
+            boxes[key]=tile;
+            board.Controls.Add(tile,col+1,row+1);
         }
-        upper.Controls.Add(board,0,0);
-        var directions = new Panel { Dock=DockStyle.Fill, BackColor=Color.White, Margin=new Padding(9,2,1,2) };
-        var info=Caption("↑  Piaci potenciál\r\n→ SMC-pozíció\r\n\r\nÜgyfél szerkesztéséhez kattints\r\nduplán a vevő sorára.",10,false);
-        info.Location=new Point(14,12); directions.Controls.Add(info);
-        var all=Button("Összes csoport",false); all.Location=new Point(14,124); all.Click+=(s,e)=>{boxFilter="";FillCustomers();}; directions.Controls.Add(all);
-        upper.Controls.Add(directions,1,0);
-        layout.Controls.Add(upper,0,1);
-        var filter=Row(); AddField(filter,"Keresés",buyerSearch);AddField(filter,"SAE",owners);filter.Controls.Add(visible);
+
+        var summary=new CardPanel { Dock=DockStyle.Fill, Fill=CompassStyle.Navy, Outline=CompassStyle.Navy,
+            Padding=new Padding(14,12,14,10), Margin=new Padding(0) };
+        var facts=Frame(27,53,31,43,0,42);
+        facts.BackColor=CompassStyle.Navy;
+        summary.Controls.Add(facts);
+        var title=Caption("SZŰRT VEVŐK",10,true);
+        title.ForeColor=Color.FromArgb(171,208,239);
+        facts.Controls.Add(title,0,0);
+        matrixTotal.ForeColor=Color.White;
+        facts.Controls.Add(matrixTotal,0,1);
+        matrixRanked.ForeColor=Color.FromArgb(132,229,223);
+        facts.Controls.Add(matrixRanked,0,2);
+        matrixUnrated=Button("Pontozásra vár",false);
+        matrixUnrated.Dock=DockStyle.Top;
+        matrixUnrated.Click+=(s,e)=>SelectMatrixBox(boxFilter==UnratedCustomers?"":UnratedCustomers);
+        facts.Controls.Add(matrixUnrated,0,3);
+        var shareNote=Caption("A csempék a besorolt vevők arányát mutatják.",9,false);
+        shareNote.ForeColor=Color.FromArgb(171,208,239);
+        shareNote.AutoSize=false;shareNote.Dock=DockStyle.Fill;
+        facts.Controls.Add(shareNote,0,4);
+        matrixReset=Button("Összes csoport",false);
+        matrixReset.Dock=DockStyle.Top;
+        matrixReset.Click+=(s,e)=>SelectMatrixBox("");
+        facts.Controls.Add(matrixReset,0,5);
+        upper.Controls.Add(summary,1,0);
+        layout.Controls.Add(upper,0,0);
+
+        var filter=Row();
+        AddField(filter,"Keresés",buyerSearch);AddField(filter,"SAE",owners);filter.Controls.Add(visible);
         filter.Controls.Add(Action("Vevő értékelése",EditCustomer,true));
-        layout.Controls.Add(filter,0,2);
+        layout.Controls.Add(filter,0,1);
+        matrixSelection.Dock=DockStyle.Fill;matrixSelection.TextAlign=ContentAlignment.MiddleLeft;
+        layout.Controls.Add(matrixSelection,0,2);
         Columns(buyers,"Ügyfélkód","Vevő","Város","SAE","9-box","Következő lépés");
+        buyers.BorderStyle=BorderStyle.None;
         buyers.Columns[1].FillWeight=180;buyers.Columns[5].FillWeight=160;
+        buyers.Columns[4].DefaultCellStyle.Alignment=DataGridViewContentAlignment.MiddleCenter;
+        buyers.Columns[4].DefaultCellStyle.ForeColor=Teal;
         buyers.CellDoubleClick+=(s,e)=>{if(e.RowIndex>=0)Run(EditCustomer);};
         layout.Controls.Add(buyers,0,3);
+        matrixNote.Dock=DockStyle.Fill;matrixNote.TextAlign=ContentAlignment.MiddleLeft;
+        layout.Controls.Add(matrixNote,0,4);
+    }
+
+    private static Label MatrixAxis(string text,ContentAlignment alignment)
+    {
+        var label=Caption(text,8.5f,true);
+        label.AutoSize=false;label.Dock=DockStyle.Fill;label.TextAlign=alignment;
+        label.ForeColor=Muted;
+        return label;
+    }
+
+    private void SelectMatrixBox(string key)
+    {
+        boxFilter=key;
+        FillCustomers();
     }
 
     private void BuildPipeline(TabPage page)
@@ -734,36 +802,50 @@ internal sealed class DesktopWindow : Form
         return Json.Items(Json.Map(Json.Get(state,"buyers")),"items").Select(Json.Map);
     }
 
+    private static string MatrixKey(Dictionary<string,object> customer)
+    {
+        return Json.Text(customer,"potential")+"-"+Json.Text(customer,"position");
+    }
+
     private void FillCustomers()
     {
-        var all=CustomerList().ToList();var search=buyerSearch.Text.Trim();var owner=Selection(owners);
+        var all=CustomerList().ToList();
+        var search=buyerSearch.Text.Trim();
+        var owner=Selection(owners);
         var selected=all.Where(i=>(!visible.Checked||!Json.Flag(i,"hidden"))&&(owner.Length==0||Json.Text(i,"owner")==owner)
             && (search.Length==0||new[]{"id","city","name","next"}.Any(k=>Contains(Json.Text(i,k),search)))).ToList();
-        var byBox=selected.GroupBy(i=>Json.Text(i,"potential")+"-"+Json.Text(i,"position")).ToDictionary(g=>g.Key,g=>g.Count());
+        var byBox=selected.GroupBy(MatrixKey).ToDictionary(g=>g.Key,g=>g.Count());
+        int ranked=byBox.Where(entry=>boxes.ContainsKey(entry.Key)).Sum(entry=>entry.Value);
         foreach(var each in boxes)
         {
             int count;
             byBox.TryGetValue(each.Key,out count);
-            int p=each.Key[0]-'0', q=each.Key[2]-'0';
-            each.Value.Text=String.Format("{0} vevő   ·   {1} × {2}",count,p,q);
-            each.Value.BackColor=boxFilter==each.Key?Blue:(p+q>=5?Color.FromArgb(218,241,235):Color.FromArgb(225,237,250));
-            each.Value.ForeColor=boxFilter==each.Key?Color.White:Ink;
+            each.Value.Display(count,ranked,boxFilter==each.Key);
         }
-        int ranked=selected.Count(i=>Json.Get(i,"potential")!=null&&Json.Get(i,"position")!=null);
+        matrixTotal.Text=selected.Count.ToString("N0",Hu);
+        matrixRanked.Text=ranked.ToString("N0",Hu)+" besorolt vevő";
+        matrixUnrated.Text=(selected.Count-ranked).ToString("N0",Hu)+" pontozásra vár";
+        bool unrated=boxFilter==UnratedCustomers;
+        matrixUnrated.BackColor=unrated?Color.FromArgb(190,239,232):Color.White;
+        matrixReset.Enabled=boxFilter.Length>0;
+
         var market=Json.Map(Json.Get(state,"buyers"));
         int active=Json.Items(market,"filters").Select(Json.Map).Count(i=>Json.Items(i,"criteria").Count>0);
         string fileState=Json.Get(market,"sheet")==null?"SpeedUp-forrás beállítása szükséges.":active>0?"Mentett Excel-szűrés aktív.":"Mentett aktív Excel-szűrés nincs.";
-        if(Json.Flag(market,"views"))fileState+=" A fájl mentett külön lapnézetet is tartalmaz.";
-        matrixNote.Text=String.Format("{0} besorolt · {1} pontozásra vár   |   {2} rejtett vevősor. {3}",ranked,selected.Count-ranked,all.Count(i=>Json.Flag(i,"hidden")),fileState);
+        if(Json.Flag(market,"views"))fileState+=" Külön lapnézettel.";
+        matrixNote.Text=String.Format("{0} rejtett vevősor az Excelben. {1}",all.Count(i=>Json.Flag(i,"hidden")),fileState);
         buyers.Rows.Clear();
         foreach(var item in selected)
         {
-            string p=Json.Text(item,"potential"),q=Json.Text(item,"position");
-            if(boxFilter.Length>0&&p+"-"+q!=boxFilter) continue;
-            string score=p.Length>0&&q.Length>0?p+" × "+q:"—";
+            string key=MatrixKey(item);
+            bool inMatrix=boxes.ContainsKey(key);
+            if(unrated?inMatrix:boxFilter.Length>0&&key!=boxFilter)continue;
+            string score=inMatrix?key.Replace("-"," × "):"—";
             int row=buyers.Rows.Add(Json.Text(item,"id"),Json.Text(item,"name")+(Json.Flag(item,"hidden")?"  [rejtett]":""),Json.Text(item,"city"),Json.Text(item,"owner"),score,Json.Text(item,"next"));
             buyers.Rows[row].Tag=item;
         }
+        string group=unrated?"Pontozásra vár":boxFilter.Length>0?"9-box · "+boxFilter.Replace("-"," × "):"Összes csoport";
+        matrixSelection.Text=group+"   ·   "+buyers.Rows.Count.ToString("N0",Hu)+" vevő a listában";
     }
 
     private async Task EditCustomer()

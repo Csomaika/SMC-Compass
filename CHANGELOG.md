@@ -1,5 +1,10 @@
 # SMC Compass · verziónapló
 
+## 1.2.11 · Megújult 9-box vevőmátrix
+
+- A csempék megjelenítik a darabszámot és a besorolt vevőkön belüli részarányt. A kitöltés és az aránysáv szűréskor animálva igazodik az adatokhoz.
+- A piaci potenciál és az SMC-pozíció külön tengelyt kapott. Egyetlen kattintással szűrhető az adott mező vagy a pontozásra váró vevők listája.
+
 ## 1.2.10 · Folyamatosabb animációk
 
 - A forecast, a menü, a mutatószámok, a kapcsolatjelző és a frissítési sáv közös, közel 60 FPS-es ütemezést kapott.

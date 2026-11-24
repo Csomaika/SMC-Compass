@@ -401,3 +401,99 @@ internal sealed class NativePages : TabControl
         base.WndProc(ref m);
     }
 }
+
+// The nine buttons keep native keyboard focus and activation.
+internal sealed class MatrixTile : Button
+{
+    private static readonly Color Accent=Color.FromArgb(8,111,158);
+    private static readonly Color Teal=Color.FromArgb(12,135,151);
+    private readonly AnimationFrames frames;
+    private readonly Stopwatch watch=new Stopwatch();
+    private readonly Font numberFont=new Font("Segoe UI",19,FontStyle.Bold);
+    private readonly Font detailFont=new Font("Segoe UI",9,FontStyle.Bold);
+    private readonly string coordinates;
+    private readonly string scores;
+    private int count, total;
+    private double fill, from, target;
+    private bool hot, selected;
+
+    internal MatrixTile(int potential,int position)
+    {
+        coordinates=potential+" × "+position;
+        scores="Piaci potenciál "+potential+", SMC-pozíció "+position;
+        Dock=DockStyle.Fill;
+        Margin=new Padding(4,3,4,3);
+        BackColor=Color.White;
+        FlatStyle=FlatStyle.Flat;
+        Cursor=Cursors.Hand;
+        DoubleBuffered=true;
+        ResizeRedraw=true;
+        frames=new AnimationFrames(()=>{
+            double progress=Math.Min(1,watch.Elapsed.TotalMilliseconds/300);
+            fill=from+(target-from)*(1-Math.Pow(1-progress,3));
+            if(progress>=1)frames.Enabled=false;
+            Invalidate();
+        });
+    }
+
+    internal void Display(int count,int total,bool selected)
+    {
+        this.count=count;this.total=total;this.selected=selected;
+        AccessibleName=scores+" · "+count+" vevő";
+        AccessibleDescription=selected?"Aktív szűrés. Aktiválással törölhető.":"Aktiválással erre a mezőre szűr.";
+        double next=total>0?(double)count/total:0;
+        if(!Visible||!IsHandleCreated||!CompassStyle.MotionEnabled)
+        {
+            target=fill=next;frames.Enabled=false;
+        }
+        else if(target!=next)
+        {
+            from=fill;target=next;watch.Restart();frames.Enabled=true;
+        }
+        Invalidate();
+    }
+
+    protected override void OnMouseEnter(EventArgs e){base.OnMouseEnter(e);hot=true;Invalidate();}
+    protected override void OnMouseLeave(EventArgs e){base.OnMouseLeave(e);hot=false;Invalidate();}
+    protected override void OnGotFocus(EventArgs e){base.OnGotFocus(e);Invalidate();}
+    protected override void OnLostFocus(EventArgs e){base.OnLostFocus(e);Invalidate();}
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        if(Width<28||Height<32)return;
+        var g=e.Graphics;g.SmoothingMode=SmoothingMode.AntiAlias;g.Clear(BackColor);
+        Color tint=selected?Color.FromArgb(219,244,246):CompassStyle.Mix(Color.FromArgb(247,250,254),Color.FromArgb(151,218,232),Math.Min(1,Math.Sqrt(fill)*1.30));
+        Color outline=selected?Teal:Focused||hot?Accent:Color.FromArgb(219,231,243);
+        using(var path=CompassStyle.Round(new RectangleF(1,1,Width-2,Height-2),10))
+        using(var surface=new SolidBrush(tint))
+        using(var edge=new Pen(outline,selected?2f:1f))
+        {
+            g.FillPath(surface,path);g.DrawPath(edge,path);
+        }
+        int countWidth=TextRenderer.MeasureText(count.ToString(),numberFont,Size.Empty,TextFormatFlags.NoPadding).Width;
+        HeroPanel.Draw(g,count.ToString(),numberFont,DesktopWindow.Ink,new Rectangle(11,5,Width-69,Height-17));
+        if(Width>=countWidth+87)
+            HeroPanel.Draw(g,"vevő",detailFont,DesktopWindow.Muted,new Rectangle(16+countWidth,7,35,Height-17));
+        string share=total>0?(100.0*count/total).ToString("0.#")+"%":"0%";
+        DrawRight(g,coordinates,selected?Accent:DesktopWindow.Muted,new Rectangle(Width-66,5,55,19));
+        if(Height>=53)DrawRight(g,share,DesktopWindow.Muted,new Rectangle(Width-57,24,46,19));
+        float width=Width-22;
+        using(var rail=new SolidBrush(Color.FromArgb(220,233,243)))
+        using(var bar=new SolidBrush(Teal))
+        {
+            g.FillRectangle(rail,11,Height-10,width,3);
+            if(fill>0)g.FillRectangle(bar,11,Height-10,Math.Max(2,(float)(fill*width)),3);
+        }
+    }
+
+    private void DrawRight(Graphics g,string value,Color ink,Rectangle bounds)
+    {
+        TextRenderer.DrawText(g,value,detailFont,bounds,ink,TextFormatFlags.Right|TextFormatFlags.VerticalCenter|TextFormatFlags.NoPadding);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if(disposing){frames.Dispose();numberFont.Dispose();detailFont.Dispose();}
+        base.Dispose(disposing);
+    }
+}
