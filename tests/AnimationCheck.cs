@@ -8,16 +8,27 @@ using System.Windows.Forms;
 
 internal static class AnimationCheck
 {
-    private sealed class PaintSamples
+    private sealed class PaintSamples : NativeWindow, IDisposable
     {
         private readonly string label;
+        private readonly Stopwatch clock;
         private readonly List<double> frames=new List<double>();
 
         internal PaintSamples(Control control,string label,Stopwatch clock)
         {
             this.label=label;
-            control.Paint+=(sender,args)=>{if(clock.IsRunning)frames.Add(clock.Elapsed.TotalMilliseconds);};
+            this.clock=clock;
+            AssignHandle(control.Handle);
         }
+
+        protected override void WndProc(ref Message message)
+        {
+            base.WndProc(ref message);
+            const int paint=0x000f;
+            if(message.Msg==paint&&clock.IsRunning)frames.Add(clock.Elapsed.TotalMilliseconds);
+        }
+
+        public void Dispose(){ ReleaseHandle(); }
 
         internal void Check()
         {
@@ -97,7 +108,11 @@ internal static class AnimationCheck
                     result=0;
                 }
                 catch(Exception error) { Console.Error.WriteLine(error); }
-                finally { window.Close(); }
+                finally
+                {
+                    foreach(var item in samples)item.Dispose();
+                    window.Close();
+                }
             };
             Application.Run(window);
         }
