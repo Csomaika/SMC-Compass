@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -77,6 +78,11 @@ internal static class AnimationCheck
             var chart=new ForecastChart { Bounds=new Rectangle(215,381,1000,352) };
             var card=new KpiCard("Tény YTD","↗") { Bounds=new Rectangle(215,169,255,100) };
             var nav=new NavButton("Áttekintés","▤") { Location=new Point(10,12) };
+            var navBackground=new AccentPanel(Color.FromArgb(189,227,243),Color.FromArgb(221,244,236),LinearGradientMode.Vertical)
+                { Bounds=new Rectangle(0,0,210,window.ClientSize.Height) };
+            navBackground.Controls.Add(nav);
+            var inactive=new NavButton("9-box vevőmátrix","▦") { Location=new Point(10,62) };
+            navBackground.Controls.Add(inactive);
             var strip=new RefreshStrip();
             var matrix=new MatrixTile[9];
             for(int i=0;i<matrix.Length;i++)
@@ -86,7 +92,7 @@ internal static class AnimationCheck
                 };
                 window.Controls.Add(matrix[i]);
             }
-            window.Controls.AddRange(new Control[]{hero,chart,card,nav,strip});
+            window.Controls.AddRange(new Control[]{hero,chart,card,navBackground,strip});
             var clock=new Stopwatch();
             var samples=new[]{
                 new PaintSamples(hero,"Source pulse",clock),
@@ -115,6 +121,15 @@ internal static class AnimationCheck
                     await Task.Delay(1250);
                     clock.Stop();
                     foreach(var item in samples)item.Check();
+                    using(var menu=new Bitmap(navBackground.Width,navBackground.Height))
+                    {
+                        navBackground.DrawToBitmap(menu,navBackground.ClientRectangle);
+                        Color background=menu.GetPixel(3,inactive.Top);
+                        Color button=menu.GetPixel(inactive.Right-10,inactive.Top);
+                        if(inactive.BackColor.A!=255||Math.Abs(background.R-button.R)>2||
+                            Math.Abs(background.G-button.G)>2||Math.Abs(background.B-button.B)>2)
+                            throw new InvalidOperationException("Inactive menu button did not repaint its background.");
+                    }
                     result=0;
                 }
                 catch(Exception error) { Console.Error.WriteLine(error); }

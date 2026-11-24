@@ -1,5 +1,9 @@
 # SMC Compass · verziónapló
 
+## 1.2.15 · Oldalsáv megjelenítési javítása
+
+- A menüpontok minden képkocka előtt újrarajzolják saját hátterüket. Ez javítja a maximalizált ablakban lapváltáskor összecsúszó feliratokat.
+
 ## 1.2.14 · Kék és menta árnyalatok
 
 - A navigáció kékből mentába váltó hátteret kapott. A 9-box jobb oldali összesítője türkiz fejlécen emeli ki a vevőszámot.

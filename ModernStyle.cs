@@ -88,9 +88,15 @@ internal sealed class AccentPanel : Panel
 
     protected override void OnPaintBackground(PaintEventArgs e)
     {
+        PaintSurface(e.Graphics,ClientRectangle,Point.Empty);
+    }
+
+    internal void PaintSurface(Graphics graphics,Rectangle bounds,Point origin)
+    {
         if(ClientSize.Width<1||ClientSize.Height<1)return;
-        using(var brush=new LinearGradientBrush(ClientRectangle,start,end,direction))
-            e.Graphics.FillRectangle(brush,ClientRectangle);
+        var gradient=new Rectangle(-origin.X,-origin.Y,ClientSize.Width,ClientSize.Height);
+        using(var brush=new LinearGradientBrush(gradient,start,end,direction))
+            graphics.FillRectangle(brush,bounds);
     }
 }
 
@@ -333,10 +339,11 @@ internal sealed class NavButton : Button
             Invalidate();
         });
         Width=195;Height=45;FlatStyle=FlatStyle.Flat;FlatAppearance.BorderSize=0;
-        ForeColor=DesktopWindow.Ink;BackColor=Color.Transparent;
+        ForeColor=DesktopWindow.Ink;BackColor=CompassStyle.Sidebar;
         Font=new Font("Segoe UI",10,FontStyle.Bold);
         Cursor=Cursors.Hand;
         DoubleBuffered=true;
+        SetStyle(ControlStyles.Opaque|ControlStyles.ResizeRedraw,true);
     }
 
     protected override void OnMouseEnter(EventArgs e){base.OnMouseEnter(e);hot=true;Invalidate();}
@@ -346,7 +353,13 @@ internal sealed class NavButton : Button
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        var g=e.Graphics;g.SmoothingMode=SmoothingMode.AntiAlias;
+        if(Width<2||Height<3)return;
+        var g=e.Graphics;
+        // Paint the gradient in local coordinates before drawing the next frame.
+        var sidebar=Parent as AccentPanel;
+        if(sidebar!=null)sidebar.PaintSurface(g,ClientRectangle,Location);
+        else g.Clear(BackColor);
+        g.SmoothingMode=SmoothingMode.AntiAlias;
         if(level>0||hot||Focused)
         {
             using(var frame=CompassStyle.Round(new RectangleF(0,1,Width-1,Height-2),8))
