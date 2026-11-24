@@ -1,5 +1,9 @@
 # SMC Compass · verziónapló
 
+## 1.2.13 · Világosabb munkaterület
+
+- Az oldalsáv világos hátteret kapott, a 9-box összefoglaló fehér lett. A kijelölt menüpontot és a mátrixmezőt türkiz jelzi.
+
 ## 1.2.12 · Egyértelműbb 9-box besorolások
 
 - A mezők 01-től 09-ig számozottak, rövid nevet kaptak, és a lista a mezőszám mellett mindkét pontszámot mutatja.

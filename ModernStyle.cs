@@ -6,7 +6,7 @@ using System.Windows.Forms;
 
 internal static class CompassStyle
 {
-    internal static readonly Color Navy=Color.FromArgb(8,30,55), Border=Color.FromArgb(220,230,241),
+    internal static readonly Color Sidebar=Color.FromArgb(248,251,254), Border=Color.FromArgb(220,230,241),
         Pale=Color.FromArgb(234,243,252), GreenPale=Color.FromArgb(229,247,242);
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -312,7 +312,7 @@ internal sealed class NavButton : Button
             Invalidate();
         });
         Width=195;Height=45;FlatStyle=FlatStyle.Flat;FlatAppearance.BorderSize=0;
-        ForeColor=Color.White;BackColor=CompassStyle.Navy;
+        ForeColor=DesktopWindow.Ink;BackColor=CompassStyle.Sidebar;
         Font=new Font("Segoe UI",10,FontStyle.Bold);
         Cursor=Cursors.Hand;
         DoubleBuffered=true;
@@ -325,20 +325,20 @@ internal sealed class NavButton : Button
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        var g=e.Graphics;g.SmoothingMode=SmoothingMode.AntiAlias;g.Clear(CompassStyle.Navy);
+        var g=e.Graphics;g.SmoothingMode=SmoothingMode.AntiAlias;g.Clear(CompassStyle.Sidebar);
         if(level>0||hot||Focused)
         {
             using(var frame=CompassStyle.Round(new RectangleF(0,1,Width-1,Height-2),8))
-            using(var fill=new SolidBrush(CompassStyle.Mix(hot||Focused?Color.FromArgb(20,51,80):CompassStyle.Navy,Color.FromArgb(19,76,117),level)))g.FillPath(fill,frame);
+            using(var fill=new SolidBrush(CompassStyle.Mix(hot||Focused?CompassStyle.Pale:CompassStyle.Sidebar,Color.FromArgb(218,244,240),level)))g.FillPath(fill,frame);
         }
         if(level>0)
         {
             float half=(float)((Height/2-7)*level);
-            using(var glow=new Pen(Color.FromArgb((int)(255*level),83,224,233),3))
+            using(var glow=new Pen(Color.FromArgb((int)(255*level),14,140,129),3))
                 g.DrawLine(glow,3,Height/2-half,3,Height/2+half);
         }
-        Color text=Active||hot?Color.White:Color.FromArgb(184,207,230);
-        HeroPanel.Draw(g,mark,Font,Color.FromArgb(139,195,245),new Rectangle(13,1,24,Height-2));
+        Color text=Active?Color.FromArgb(3,90,83):DesktopWindow.Ink;
+        HeroPanel.Draw(g,mark,Font,Active?DesktopWindow.Teal:DesktopWindow.Muted,new Rectangle(13,1,24,Height-2));
         HeroPanel.Draw(g,Text,Font,text,new Rectangle(42,1,Width-48,Height-2));
     }
     protected override void Dispose(bool disposing){if(disposing)transition.Dispose();base.Dispose(disposing);}
@@ -496,9 +496,10 @@ internal sealed class MatrixTile : Button
             g.FillPath(surface,path);g.DrawPath(edge,path);
         }
         using(var badge=CompassStyle.Round(new RectangleF(10,5,26,18),5))
+        using(var badgeFill=new SolidBrush(selected?DesktopWindow.Teal:Color.FromArgb(224,239,247)))
         {
-            g.FillPath(selected?Brushes.Teal:Brushes.MidnightBlue,badge);
-            HeroPanel.Draw(g,Number,detailFont,Color.White,new Rectangle(15,5,20,18));
+            g.FillPath(badgeFill,badge);
+            HeroPanel.Draw(g,Number,detailFont,selected?Color.White:DesktopWindow.Ink,new Rectangle(15,5,20,18));
         }
         HeroPanel.Draw(g,Title,titleFont,DesktopWindow.Ink,new Rectangle(10,22,Width-20,22));
         DrawRight(g,Coordinates,selected?Accent:DesktopWindow.Muted,new Rectangle(Width-54,5,43,18));
