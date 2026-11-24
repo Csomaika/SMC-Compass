@@ -33,7 +33,7 @@ internal sealed class ForecastChart : Control
 {
     private readonly Font title=new Font("Segoe UI",12,FontStyle.Bold);
     private readonly Font small=new Font("Segoe UI",9);
-    private readonly Timer animation=new Timer{Interval=25};
+    private readonly AnimationFrames animation;
     private readonly Stopwatch clock=new Stopwatch();
     private readonly ToolTip tip=new ToolTip();
     private readonly Color actualColor=Color.FromArgb(8,106,194), forecastColor=Color.FromArgb(6,129,114),
@@ -48,11 +48,11 @@ internal sealed class ForecastChart : Control
         DoubleBuffered=true;
         ResizeRedraw=true;
         AccessibleName="Halmozott tény, terv és forecast hónaponként";
-        animation.Tick+=(s,e)=>{
+        animation=new AnimationFrames(()=>{
             progress=Math.Min(1,clock.Elapsed.TotalMilliseconds/930.0);
-            if(progress>=1)animation.Stop();
+            if(progress>=1)animation.Enabled=false;
             Invalidate();
-        };
+        });
     }
 
     internal void SetData(Dictionary<string,object> values)
@@ -65,9 +65,9 @@ internal sealed class ForecastChart : Control
     {
         if(Visible&&IsHandleCreated&&CompassStyle.MotionEnabled)
         {
-            progress=0;clock.Restart();animation.Start();
+            progress=0;clock.Restart();animation.Enabled=true;
         }
-        else {animation.Stop();progress=1;}
+        else {animation.Enabled=false;progress=1;}
         Invalidate();
     }
 

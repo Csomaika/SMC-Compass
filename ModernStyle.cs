@@ -39,6 +39,40 @@ internal static class CompassStyle
     }
 }
 
+internal sealed class AnimationFrames : IDisposable
+{
+    // Share one UI timer across active controls. Elapsed time still drives each animation.
+    private static readonly Timer timer = new Timer { Interval = 15 };
+    private static Action frame;
+    private readonly Action advance;
+    private bool enabled;
+
+    static AnimationFrames()
+    {
+        timer.Tick += (sender, args) => { var pending = frame; if (pending != null) pending(); };
+    }
+
+    internal AnimationFrames(Action advance)
+    {
+        this.advance=advance;
+    }
+
+    internal bool Enabled
+    {
+        get { return enabled; }
+        set
+        {
+            if(enabled==value)return;
+            enabled=value;
+            if(enabled)frame+=advance;
+            else frame-=advance;
+            timer.Enabled=frame!=null;
+        }
+    }
+
+    public void Dispose() { Enabled=false; }
+}
+
 internal class CardPanel : Panel
 {
     internal Color Fill=Color.White;
@@ -68,7 +102,7 @@ internal class CardPanel : Panel
 
 internal sealed class HeroPanel : Panel
 {
-    private readonly Timer reveal=new Timer{Interval=23};
+    private readonly AnimationFrames reveal;
     private readonly Stopwatch watch=new Stopwatch();
     private double light=1, phase;
     private readonly Stopwatch ambient = new Stopwatch();
@@ -85,14 +119,13 @@ internal sealed class HeroPanel : Panel
         BackColor=Color.Transparent;
         DoubleBuffered=true;
         ResizeRedraw=true;
-        reveal.Tick+=(s,e)=>{
+        reveal=new AnimationFrames(()=>{
             if(!CanAnimate()){SyncMotion();return;}
             light=Math.Min(1,watch.Elapsed.TotalMilliseconds/520);
             phase=(ambient.Elapsed.TotalMilliseconds%2800)/2800;
-            if(light>=1&&!connected)reveal.Stop();
-            reveal.Interval=light<1?25:80;
+            if(light>=1&&!connected)reveal.Enabled=false;
             Invalidate(new Rectangle(Math.Max(0,Width-330),0,Math.Min(330,Width),Height));
-        };
+        });
     }
 
     internal void Animate()
@@ -110,13 +143,13 @@ internal sealed class HeroPanel : Panel
     {
         if(!CanAnimate())
         {
-            reveal.Stop();ambient.Stop();light=1;phase=0;
+            reveal.Enabled=false;ambient.Stop();light=1;phase=0;
         }
         else if(connected||light<1)
         {
-            ambient.Start();reveal.Interval=light<1?25:80;reveal.Start();
+            ambient.Start();reveal.Enabled=true;
         }
-        else {reveal.Stop();ambient.Stop();}
+        else {reveal.Enabled=false;ambient.Stop();}
         Invalidate();
     }
 
@@ -190,7 +223,7 @@ internal sealed class HeroPanel : Panel
 
 internal sealed class KpiCard : Control
 {
-    private readonly Timer timer=new Timer {Interval=23};
+    private readonly AnimationFrames frames;
     private readonly Stopwatch clock=new Stopwatch();
     private readonly string label,symbol;
     private double from;
@@ -198,6 +231,7 @@ internal sealed class KpiCard : Control
     private string note="";
     private Color accent=DesktopWindow.Blue;
     private double progress=1;
+    private double CurrentAmount { get { return from+((value??0)-from)*(1-Math.Pow(1-progress,3)); } }
 
     internal KpiCard(string label,string symbol)
     {
@@ -205,16 +239,17 @@ internal sealed class KpiCard : Control
         AccessibleName=label;
         BackColor=DesktopWindow.Cloud;
         DoubleBuffered=true;ResizeRedraw=true;
-        timer.Tick+=(s,e)=>{progress=Math.Min(1,clock.Elapsed.TotalMilliseconds/430);if(progress>=1)timer.Stop();Invalidate();};
+        frames=new AnimationFrames(()=>{progress=Math.Min(1,clock.Elapsed.TotalMilliseconds/430);if(progress>=1)frames.Enabled=false;Invalidate();});
     }
 
     internal void Display(double? amount,string description,Color color)
     {
         bool changed=amount!=value;
-        from=value??0;value=amount;note=description;accent=color;
+        if(changed)from=value.HasValue?CurrentAmount:0;
+        value=amount;note=description;accent=color;
         AccessibleDescription=DesktopWindow.Format(value,"db")+" · "+note;
-        if(changed&&IsHandleCreated&&Visible&&CompassStyle.MotionEnabled){progress=0;clock.Restart();timer.Start();}
-        else if(changed){progress=1;timer.Stop();}
+        if(changed&&IsHandleCreated&&Visible&&CompassStyle.MotionEnabled){progress=0;clock.Restart();frames.Enabled=true;}
+        else if(changed){progress=1;frames.Enabled=false;}
         Invalidate();
     }
 
@@ -236,20 +271,19 @@ internal sealed class KpiCard : Control
         {
             HeroPanel.Draw(g,label.ToUpperInvariant(),caption,DesktopWindow.Muted,new Rectangle(13,10,Math.Max(1,Width-57),23));
             HeroPanel.Draw(g,symbol,caption,DesktopWindow.Blue,new Rectangle(Width-34,13,22,25));
-            double gain=1-Math.Pow(1-progress,3);
-            string result=value.HasValue?DesktopWindow.Format(Math.Round(from+(value.Value-from)*gain),"db"):"—";
+            string result=value.HasValue?DesktopWindow.Format(Math.Round(CurrentAmount),"db"):"—";
             if(label=="Eltérés a céltól"&&value>0)result="+"+result;
             HeroPanel.Draw(g,result,figures,accent,new Rectangle(12,35,Width-25,42));
             HeroPanel.Draw(g,note,detail,DesktopWindow.Muted,new Rectangle(13,74,Width-26,23));
         }
     }
 
-    protected override void Dispose(bool disposing){if(disposing)timer.Dispose();base.Dispose(disposing);}
+    protected override void Dispose(bool disposing){if(disposing)frames.Dispose();base.Dispose(disposing);}
 }
 
 internal sealed class NavButton : Button
 {
-    private readonly Timer transition=new Timer {Interval=20};
+    private readonly AnimationFrames transition;
     private readonly Stopwatch easeClock=new Stopwatch();
     private bool active;
     private double level, startLevel;
@@ -260,8 +294,8 @@ internal sealed class NavButton : Button
         {
             if(active==value)return;
             active=value;startLevel=level;
-            if(Visible&&IsHandleCreated&&CompassStyle.MotionEnabled){easeClock.Restart();transition.Start();}
-            else {transition.Stop();level=active?1:0;}
+            if(Visible&&IsHandleCreated&&CompassStyle.MotionEnabled){easeClock.Restart();transition.Enabled=true;}
+            else {transition.Enabled=false;level=active?1:0;}
             Invalidate();
         }
     }
@@ -271,12 +305,12 @@ internal sealed class NavButton : Button
     internal NavButton(string label,string mark)
     {
         Text=label;this.mark=mark; AccessibleName=label;
-        transition.Tick+=(s,e)=>{
+        transition=new AnimationFrames(()=>{
             double t=Math.Min(1,easeClock.Elapsed.TotalMilliseconds/280);
             level=startLevel+((active?1:0)-startLevel)*(1-Math.Pow(1-t,3));
-            if(t>=1)transition.Stop();
+            if(t>=1)transition.Enabled=false;
             Invalidate();
-        };
+        });
         Width=195;Height=45;FlatStyle=FlatStyle.Flat;FlatAppearance.BorderSize=0;
         ForeColor=Color.White;BackColor=CompassStyle.Navy;
         Font=new Font("Segoe UI",10,FontStyle.Bold);
@@ -313,7 +347,7 @@ internal sealed class NavButton : Button
 // Indeterminate: SharePoint and local workbook reads do not expose a percentage.
 internal sealed class RefreshStrip : Control
 {
-    private readonly Timer timer=new Timer {Interval=33};
+    private readonly AnimationFrames frames;
     private readonly Stopwatch clock=new Stopwatch();
     private bool working;
     private double phase;
@@ -322,7 +356,7 @@ internal sealed class RefreshStrip : Control
     {
         Dock=DockStyle.Bottom;Height=4;TabStop=false;BackColor=Color.White;
         DoubleBuffered=true;AccessibleRole=AccessibleRole.ProgressBar;AccessibleName="Adatfrissítés folyamatban";
-        timer.Tick+=(s,e)=>{phase=(clock.Elapsed.TotalMilliseconds%1500)/1500;Invalidate();};
+        frames=new AnimationFrames(()=>{phase=(clock.Elapsed.TotalMilliseconds%1500)/1500;Invalidate();});
         Visible=false;
     }
 
@@ -337,7 +371,7 @@ internal sealed class RefreshStrip : Control
     {
         var owner=FindForm();
         bool moving=working&&Visible&&owner!=null&&owner.WindowState!=FormWindowState.Minimized&&CompassStyle.MotionEnabled;
-        timer.Enabled=moving;
+        frames.Enabled=moving;
         if(!moving)phase=.5;
         Invalidate();
     }
@@ -353,7 +387,7 @@ internal sealed class RefreshStrip : Control
             g.FillRectangle(brush,segment);
     }
 
-    protected override void Dispose(bool disposing){if(disposing)timer.Dispose();base.Dispose(disposing);}
+    protected override void Dispose(bool disposing){if(disposing)frames.Dispose();base.Dispose(disposing);}
 }
 
 internal sealed class NativePages : TabControl

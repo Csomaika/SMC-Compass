@@ -1,5 +1,10 @@
 # SMC Compass · verziónapló
 
+## 1.2.10 · Folyamatosabb animációk
+
+- A forecast, a menü, a mutatószámok, a kapcsolatjelző és a frissítési sáv közös, közel 60 FPS-es ütemezést kapott.
+- A Windows összeállítás közben külön mérjük, hogy a vezérlők tényleges újrarajzolása eléri-e a 30 FPS-t.
+
 ## 1.2.9 · Mozgás a munkaterületen
 
 - A menü kékeszöld jelölője finoman vált oldalt. Az Áttekintés megnyitásakor fénypont kíséri a felrajzolódó forecastot.
