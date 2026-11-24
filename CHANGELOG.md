@@ -1,5 +1,9 @@
 # SMC Compass · verziónapló
 
+## 1.2.8 · Új Compass-ikon
+
+- Az új kék iránytű jelenik meg a Start menüben, a tálcán, az ablak címsorában és az alkalmazás oldalsávjában. Az ikon tíz méretben készült.
+
 ## 1.2.7 · Egyetlen adatfrissítő gomb és beépített belépés
 
 - Az Adatfrissítés gomb minden beállított forrást frissít. A programverzió frissítése a Verziónaplóban található.

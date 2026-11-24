@@ -1,52 +1,12 @@
 """Build the portable Windows package using a standard CPython 3.12 installation."""
 import argparse
-import binascii
-import math
 import os
 from pathlib import Path
 import shutil
-import struct
 import subprocess
 import sys
 import tempfile
-import zlib
 from zipfile import ZIP_DEFLATED, ZipFile
-
-
-def compass_icon(path):
-    def ink(x,y):
-        dx=max(0,abs(x-32)-19);dy=max(0,abs(y-32)-19)
-        if dx*dx+dy*dy>13*13:
-            return (0,0,0,0)
-        points=((44,20),(37,37),(20,45),(26,27))
-        if all((b[0]-a[0])*(y-a[1])-(b[1]-a[1])*(x-a[0])>=0 for a,b in zip(points,points[1:]+points[:1])):
-            return (109,190,248,255) if x+y>64 and x<35 else (255,255,255,255)
-        cross=(abs(x-32)<.9 and (7<=y<=16 or 48<=y<=57)) or (abs(y-32)<.9 and (7<=x<=16 or 48<=x<=57))
-        if cross or abs(math.hypot(x-32,y-32)-19)<.8:
-            return (166,218,254,255)
-        return (8,109,197,255)
-
-    def png(size):
-        pixels=bytearray()
-        for y in range(size):
-            pixels.append(0)
-            for x in range(size):
-                samples=[ink(64*(x+a)/size,64*(y+b)/size) for a in (.25,.75) for b in (.25,.75)]
-                alpha=sum(c[3] for c in samples)
-                pixels.extend([sum(c[i]*c[3] for c in samples)//alpha if alpha else 0 for i in range(3)]+[alpha//4])
-
-        def chunk(label,data):
-            return struct.pack('>I',len(data))+label+data+struct.pack('>I',binascii.crc32(label+data))
-
-        return b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('>IIBBBBB',size,size,8,6,0,0,0))+chunk(b'IDAT',zlib.compress(pixels))+chunk(b'IEND',b'')
-
-    images=[(size,png(size)) for size in (16,24,32,48,64,128,256)]
-    offset=6+16*len(images)
-    directory=bytearray(struct.pack('<HHH',0,1,len(images)))
-    for size,image in images:
-        directory.extend(struct.pack('<BBBBHHII',size%256,size%256,0,0,1,32,len(image),offset))
-        offset+=len(image)
-    path.write_bytes(directory+b''.join(image for _,image in images))
 
 
 def build(output, profile):
@@ -79,8 +39,7 @@ def build(output, profile):
             shutil.copy2(profile,app/'compass-profile.json')
         version = (source/'version.txt').read_text(encoding='utf-8').strip()
         assembly = Path(stage)/'Version.cs'
-        icon=Path(stage)/'Compass.ico'
-        compass_icon(icon)
+        icon=source/'assets'/'Compass.ico'
         shutil.copy2(icon,dist/'Compass.ico')
         assembly.write_text('using System.Reflection;\n[assembly: AssemblyTitle("SMC Compass")]\n'
                             f'[assembly: AssemblyVersion("{version}.0")]\n[assembly: AssemblyFileVersion("{version}.0")]\n',encoding='utf-8')

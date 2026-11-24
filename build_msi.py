@@ -19,8 +19,8 @@ def wix_source(payload, version, target):
                          UpgradeCode='9BE797E3-A89A-46F7-B0E3-060EDF950399',Scope='perMachine',InstallerVersion='500')
     SubElement(package,'MajorUpgrade',Schedule='afterInstallInitialize',DowngradeErrorMessage='A newer version of SMC Compass is already installed.')
     SubElement(package,'MediaTemplate',EmbedCab='yes')
-    SubElement(package,'Icon',Id='CompassIcon',SourceFile=str(payload/'Compass.ico'))
-    SubElement(package,'Property',Id='ARPPRODUCTICON',Value='CompassIcon')
+    SubElement(package,'Icon',Id='CompassShell.exe',SourceFile=str(payload/'SMC-Compass.exe'))
+    SubElement(package,'Property',Id='ARPPRODUCTICON',Value='CompassShell.exe')
     SubElement(package,'StandardDirectory',Id='ProgramMenuFolder')
     programs = SubElement(package,'StandardDirectory',Id='ProgramFiles64Folder')
     root = SubElement(programs,'Directory',Id='INSTALLFOLDER',Name='SMC Compass')
@@ -38,7 +38,7 @@ def wix_source(payload, version, target):
         resource = SubElement(component,'File',Id=part_id('f',name),Source=str(file),KeyPath='yes')
         if name=='SMC-Compass.exe':
             SubElement(resource,'Shortcut',Id='CompassStartMenu',Directory='ProgramMenuFolder',Name='SMC Compass',
-                       WorkingDirectory='INSTALLFOLDER',Advertise='yes')
+                       WorkingDirectory='INSTALLFOLDER',Advertise='yes',Icon='CompassShell.exe',IconIndex='0')
         SubElement(feature,'ComponentRef',Id=component_id)
     ElementTree(wix).write(target,encoding='utf-8',xml_declaration=True)
 

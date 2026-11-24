@@ -8,25 +8,24 @@ using System.Windows.Forms;
 
 internal sealed class CompassMark : Control
 {
+    private readonly Icon mark;
+
+    internal CompassMark(Icon appIcon)
+    {
+        mark = new Icon(appIcon, 64, 64);
+        AccessibleName = "SMC Compass";
+    }
+
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
-        var g=e.Graphics;g.SmoothingMode=SmoothingMode.AntiAlias;
-        g.ScaleTransform(Width/64f,Height/64f);
-        using(var shape=new GraphicsPath())
-        {
-            shape.AddArc(0,0,24,24,180,90);shape.AddArc(40,0,24,24,270,90);
-            shape.AddArc(40,40,24,24,0,90);shape.AddArc(0,40,24,24,90,90);shape.CloseFigure();
-            using(var background=new SolidBrush(DesktopWindow.Blue))g.FillPath(background,shape);
-        }
-        using(var light=new Pen(Color.FromArgb(162,216,255),1.8f))
-        {
-            g.DrawEllipse(light,13,13,38,38);
-            g.DrawLine(light,32,7,32,16);g.DrawLine(light,32,48,32,57);
-            g.DrawLine(light,7,32,16,32);g.DrawLine(light,48,32,57,32);
-        }
-        g.FillPolygon(Brushes.White,new[]{new Point(44,20),new Point(37,37),new Point(20,45),new Point(26,27)});
-        using(var tint=new SolidBrush(Color.FromArgb(105,188,251)))g.FillPolygon(tint,new[]{new Point(20,45),new Point(32,32),new Point(37,37)});
+        e.Graphics.DrawIcon(mark, ClientRectangle);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) mark.Dispose();
+        base.Dispose(disposing);
     }
 }
 

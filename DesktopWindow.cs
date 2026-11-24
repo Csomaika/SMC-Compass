@@ -225,7 +225,7 @@ internal sealed class DesktopWindow : Form
     private Control Sidebar()
     {
         var panel=new Panel { Dock=DockStyle.Fill, Margin=new Padding(0), BackColor=CompassStyle.Navy };
-        panel.Controls.Add(new CompassMark { Location=new Point(18,20), Size=new Size(43,43), BackColor=CompassStyle.Navy });
+        panel.Controls.Add(new CompassMark(Icon) { Location=new Point(18,20), Size=new Size(43,43), BackColor=CompassStyle.Navy });
         var title=Caption("SMC Compass",16,true);title.ForeColor=Color.White;title.Location=new Point(69,19);panel.Controls.Add(title);
         var product=Caption("PSD SALES WORKSPACE",8,true);product.ForeColor=Color.FromArgb(128,177,216);product.Location=new Point(71,47);panel.Controls.Add(product);
         var labels=new[]{"Áttekintés","Havi adatbevitel","9-box vevőmátrix","Sugar pipeline","Források","Verziónapló"};
