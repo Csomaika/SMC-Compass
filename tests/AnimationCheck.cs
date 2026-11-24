@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -32,12 +33,32 @@ internal static class AnimationCheck
     {
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
-        if(!CompassStyle.MotionEnabled)
-        {
-            Console.WriteLine("Frame-rate check skipped because Windows animations are disabled.");
-            return 0;
-        }
+        if(CompassStyle.MotionEnabled)return Measure();
 
+        // The hosted Windows runner starts with client-area animations disabled.
+        const uint setClientAreaAnimation=0x1043;
+        if(!SystemParametersInfo(setClientAreaAnimation,0,new IntPtr(1),0))
+        {
+            Console.Error.WriteLine("Could not enable animations for the test session.");
+            return 1;
+        }
+        try
+        {
+            if(!CompassStyle.MotionEnabled)
+            {
+                Console.Error.WriteLine("Windows animations are disabled during the frame-rate check.");
+                return 1;
+            }
+            return Measure();
+        }
+        finally { SystemParametersInfo(setClientAreaAnimation,0,IntPtr.Zero,0); }
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool SystemParametersInfo(uint action,uint parameter,IntPtr value,uint flags);
+
+    private static int Measure()
+    {
         int result=1;
         using(var window=new Form { ClientSize=new Size(1240,760), ShowInTaskbar=false })
         {
