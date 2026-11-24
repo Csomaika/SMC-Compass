@@ -30,7 +30,7 @@ def build(output, profile):
                 relative = path.relative_to(lib)
                 if path.is_file() and not ignored.intersection(relative.parts):
                     archive.write(path,relative.as_posix())
-        for name in ('app.py','desktop.py','updates.py','workbook.py'):
+        for name in ('app.py','desktop.py','updates.py','workbook.py','sugar_csv.py'):
             shutil.copy2(source/name,app/name)
         for name in ('version.txt','CHANGELOG.md'):
             shutil.copy2(source/name,dist/name)

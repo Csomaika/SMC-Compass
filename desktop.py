@@ -11,6 +11,7 @@ from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, build_opener
 
 import app as core
+from sugar_csv import opportunities_csv
 import updates
 
 DEVICE = {}
@@ -47,7 +48,8 @@ def configure(fields):
                 core.CHECKS.pop(kind,None)
         if any(cfg[k] != current[k] for k in ('sugarUrl','sugarApi','sugarPlatform')):
             core.sugar_reset()
-            core.status('sugar','Sugar beállítva. Csatlakozz az API-hoz a Források lapon.' if cfg['sugarUrl'] else 'Sugar-adatforrás beállítása szükséges.', mode='Sugar REST')
+            if core.STATE['status'].get('sugar', {}).get('mode') != 'Sugar CSV':
+                core.status('sugar','Sugar beállítva. Csatlakozz az API-hoz a Források lapon.' if cfg['sugarUrl'] else 'Sugar-adatforrás beállítása szükséges.', mode='Sugar REST')
         core.STATE['config'] = cfg
         core.save()
 
@@ -207,6 +209,33 @@ def poll_browser_sales():
     return {'result':'imported','name':path.name}
 
 
+def sugar_csv_import(data):
+    path = Path(data['path'])
+    if path.suffix.lower() != '.csv':
+        raise ValueError('Válaszd a Sugar Opportunities listából exportált CSV-fájlt.')
+    with path.open('rb') as src:
+        blob = src.read(core.LIMIT+1)
+    if len(blob)>core.LIMIT:
+        raise ValueError('A Sugar CSV meghaladja a 35 MB-ot.')
+    records = opportunities_csv(blob)
+    with core.WRITE:
+        old_records = core.STATE['opportunities']
+        old_status = core.STATE['status'].get('sugar')
+        core.STATE['opportunities'] = records
+        core.status('sugar',f'{len(records)} lehetőség · kézi Sugar CSV-import', True, 'Sugar CSV')
+        try:
+            core.save()
+        except OSError:
+            core.STATE['opportunities'] = old_records
+            if old_status is None:
+                core.STATE['status'].pop('sugar', None)
+            else:
+                core.STATE['status']['sugar'] = old_status
+            raise
+        core.sugar_reset()
+    return {'count':len(records)}
+
+
 def sugar(data):
     config = core.STATE['config'].copy()
     token = str(data.get('token','')).strip()
@@ -275,6 +304,8 @@ def poll_signin():
 def dispatch(action, data):
     if action=='state':
         return core.snapshot()
+    if action=='sugar-csv':
+        return sugar_csv_import(data)
     if action=='sugar-web':
         _, browser = core.sugar_urls(data.get('url','') or core.STATE['config']['sugarUrl'])
         return {'url':browser}

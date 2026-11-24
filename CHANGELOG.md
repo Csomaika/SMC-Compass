@@ -1,5 +1,10 @@
 # SMC Compass · verziónapló
 
+## 1.2.17 · Sugar pipeline CSV-ből
+
+- A Sugar pipeline a CRM Opportunities listájából exportált CSV-t is beolvassa. A kézi import helyi pillanatképként jelenik meg, pénznemenkénti összesítéssel.
+- A CSV importálása API-kapcsolat nélkül fut. Hibás fájl esetén a korábbi pipeline megmarad.
+
 ## 1.2.16 · Sugar CRM csatlakozás
 
 - A teljes Sugar-böngészőlink használható. A weboldal megnyitása és az Opportunities REST-import külön művelet.

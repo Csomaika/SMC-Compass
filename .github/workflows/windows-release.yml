@@ -28,7 +28,7 @@ jobs:
       - name: Build Windows package
         shell: pwsh
         run: |
-          python -m unittest -v test_refresh test_updates test_sugar
+          python -m unittest -v test_refresh test_updates test_sugar test_sugar_csv
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python build_windows.py --output dist/SMC-Compass-Windows.zip
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

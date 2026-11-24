@@ -540,6 +540,7 @@ internal sealed class DesktopWindow : Form
     {
         var layout=Frame(44,70,0); page.Controls.Add(layout);
         var filter=Row(); AddField(filter,"Keresés",sugarSearch);
+        filter.Controls.Add(Action("Sugar CSV importálása",ImportSugarCsv,true));
         var setup=Button("Sugar beállítása",false);setup.Click+=(s,e)=>tabs.SelectedIndex=4;filter.Controls.Add(setup);
         filter.Controls.Add(Action("Sugar megnyitása",OpenSugar));
         layout.Controls.Add(filter,0,0);
@@ -908,25 +909,37 @@ internal sealed class DesktopWindow : Form
         var data=Json.Items(state,"opportunities").Select(Json.Map).Where(x=>term.Length==0||new[]{"name","account_name","sales_stage"}.Any(k=>Contains(Json.Text(x,k),term))).ToList();
         pipeline.Rows.Clear();
         var groups=new SortedDictionary<string,double>();
+        bool missingCurrency=false;
         foreach(var row in data.OrderBy(x=>Json.Text(x,"date_closed")))
         {
             string currency=Json.Text(row,"currency_iso",Json.Text(row,"currency_id"));
             string stage=Json.Text(row,"sales_stage");
             double? amount=Json.Number(Json.Get(row,"amount")), probability=Json.Number(Json.Get(row,"probability"));
             string normalized=stage.ToLowerInvariant().Replace(" ","").Replace("_","");
-            if(currency.Length>0&&amount.HasValue&&probability>=0&&probability<=100&&normalized.Length>0&&!normalized.Contains("closedwon")&&!normalized.Contains("closedlost"))
+            if(amount.HasValue&&probability>=0&&probability<=100&&normalized.Length>0&&!normalized.Contains("closedwon")&&!normalized.Contains("closedlost"))
             {
-                double total;groups.TryGetValue(currency,out total);groups[currency]=total+amount.Value*probability.Value/100;
+                if(currency.Length==0)missingCurrency=true;
+                else
+                {
+                    double total;groups.TryGetValue(currency,out total);groups[currency]=total+amount.Value*probability.Value/100;
+                }
             }
             pipeline.Rows.Add(Json.Text(row,"name"),Json.Text(row,"account_name"),stage,Format(amount,currency),Format(probability,"%"),Json.Text(row,"date_closed"),Json.Text(row,"assigned_user_name"));
         }
         var connection=Source("sugar");
         string statusText=Json.Text(connection,"message",String.IsNullOrEmpty(Json.Text(Config,"sugarUrl"))
-            ?"Sugar-adatforrás beállítása szükséges.":"Kapcsolódj a Sugar API-hoz a Források lapon.");
-        if(Json.Flag(connection,"ok")&&!Json.Flag(state,"sugarConnected"))
+            ?"Tölts be Sugar CSV-t, vagy állíts be API-forrást.":"Tölts be Sugar CSV-t, vagy kapcsolódj az API-hoz a Források lapon.");
+        if(Json.Text(connection,"mode")=="Sugar CSV")
+        {
+            DateTimeOffset imported;
+            statusText="Kézi Sugar CSV"+(DateTimeOffset.TryParse(Json.Text(connection,"lastGood"),out imported)
+                ?" · "+imported.ToLocalTime().ToString("MM.dd. HH:mm",Hu):"");
+        }
+        else if(Json.Flag(connection,"ok")&&!Json.Flag(state,"sugarConnected"))
             statusText="Az utolsó import látható. Az élő frissítéshez kapcsolódj újra a Források lapon.";
-        sugarNote.Text=String.Format("{0} lehetőség   |   {1}\r\nSúlyozott nyitott pipeline  ·  {2}",data.Count,
-            statusText,groups.Count>0?String.Join("   /   ",groups.Select(g=>Format(g.Value,g.Key))):"—");
+        string weighted=groups.Count>0?String.Join("   /   ",groups.Select(g=>Format(g.Value,g.Key))):"—";
+        if(missingCurrency)weighted+="   ·   A pénznem nélküli sorok kimaradnak";
+        sugarNote.Text=String.Format("{0} lehetőség   |   {1}\r\nSúlyozott nyitott pipeline  ·  {2}",data.Count,statusText,weighted);
     }
 
     private Dictionary<string,object> Source(string key)
@@ -1153,6 +1166,19 @@ internal sealed class DesktopWindow : Form
         var result=await worker.CallAsync("sugar-web",Json.Fields("url",address));
         Launcher.OpenWeb(Json.Text(result,"url"));
         foot.Text="A Sugar megnyílt a böngészőben.";
+    }
+
+    private async Task ImportSugarCsv()
+    {
+        string path;
+        using(var file=new OpenFileDialog { Title="Sugar Opportunities CSV-import",Filter="CSV-fájl (*.csv)|*.csv",CheckFileExists=true })
+        {
+            if(file.ShowDialog(this)!=DialogResult.OK)return;
+            path=file.FileName;
+        }
+        var result=await worker.CallAsync("sugar-csv",Json.Fields("path",path));
+        await RefreshState(false);
+        foot.Text=Json.Text(result,"count")+" lehetőség betöltve a Sugar CSV-ből.";
     }
 
     private async Task SugarImport()
