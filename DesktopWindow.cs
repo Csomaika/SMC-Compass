@@ -1230,7 +1230,8 @@ internal sealed class DesktopWindow : Form
         var check=await worker.CallAsync("update-check");
         if(!Json.Flag(check,"available"))
         {
-            foot.Text=Json.Flag(check,"published")?"A telepített program naprakész.":"A GitHubon még nincs közzétett Windows-kiadás.";
+            foot.Text=Json.Flag(check,"missingPackage")?"A GitHub-kiadásból hiányzik a Windows-csomag.":
+                Json.Flag(check,"published")?"A telepített program naprakész.":"A GitHubon még nincs közzétett Windows-kiadás.";
             MessageBox.Show(this,foot.Text,"Programfrissítés",MessageBoxButtons.OK,MessageBoxIcon.Information);
             return;
         }

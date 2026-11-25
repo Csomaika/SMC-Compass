@@ -14,7 +14,7 @@ from zipfile import ZipFile
 
 import app as core
 
-REPO = 'Csomaika/SMC-Compass'
+REPOSITORY_ID = 1468819222
 ZIP_ASSET = 'SMC-Compass-Windows.zip'
 MSI_ASSET = 'SMC-Compass-Setup.msi'
 MAX_DOWNLOAD = 45 * 1024 * 1024
@@ -67,14 +67,23 @@ def asset_name():
 
 def release():
     try:
-        data = download(f'https://api.github.com/repos/{REPO}/releases/latest',1_000_000,True)
+        data = download(f'https://api.github.com/repositories/{REPOSITORY_ID}/releases/latest',1_000_000,True)
     except HTTPError as exc:
         if exc.code==404:
             return None
         raise ValueError(f'A GitHub nem érhető el ({exc.code}).') from None
     item = json.loads(data)
-    published = version(item['tag_name'])
-    asset = next((x for x in item.get('assets',[]) if x.get('name')==asset_name()),None)
+    tag = item['tag_name']
+    published = version(tag)
+    package = asset_name()
+    page = item.get('html_url') or ''
+    slug = re.fullmatch(r'https://github\.com/([A-Za-z0-9-]+/[A-Za-z0-9_.-]+)/releases/tag/'+re.escape(tag), page)
+    asset = None
+    if slug:
+        canonical_url = f'https://github.com/{slug[1]}/releases/download/{tag}/{package}'
+        asset = next((entry for entry in item.get('assets',[])
+                      if entry.get('name')==package and entry.get('state')=='uploaded'
+                      and entry.get('browser_download_url')==canonical_url), None)
     return {'version':published,'notes':str(item.get('body') or '')[:16000], 'asset':asset}
 
 
@@ -83,8 +92,10 @@ def check():
     found = release()
     if not found:
         return {'current':installed,'available':False,'published':False}
-    available = tuple(map(int,found['version'].split('.')))>tuple(map(int,installed.split('.')))
-    return {'current':installed,'latest':found['version'],'available':available,'published':True,'notes':found['notes']}
+    newer = tuple(map(int,found['version'].split('.')))>tuple(map(int,installed.split('.')))
+    packaged = found['asset'] is not None
+    return {'current':installed,'latest':found['version'],'available':newer and packaged,
+            'missingPackage':newer and not packaged,'published':True,'notes':found['notes']}
 
 
 def extract(content, stage, expected):
@@ -117,14 +128,13 @@ def install(expected):
     entry = release()
     if not entry or entry['version']!=expected or tuple(map(int,expected.split('.')))<=tuple(map(int,current().split('.'))):
         raise ValueError('A kiadás közben megváltozott. Ellenőrizd újra a frissítést.')
-    asset = entry['asset'] or {}
+    asset = entry['asset']
+    if not asset:
+        raise ValueError('A GitHub-kiadásból hiányzik az ellenőrizhető Windows-csomag.')
     digest = asset.get('digest') or ''
     if not re.fullmatch(r'sha256:[0-9a-f]{64}',digest):
         raise ValueError('A kiadásban nincs ellenőrizhető SHA-256 lenyomat.')
-    expected_url = f'https://github.com/{REPO}/releases/download/v{expected}/{package_name}'
-    if asset.get('browser_download_url')!=expected_url:
-        raise ValueError('A kiadásban nem található a várt Windows-csomag.')
-    content = download(expected_url,MAX_DOWNLOAD)
+    content = download(asset['browser_download_url'],MAX_DOWNLOAD)
     if hashlib.sha256(content).hexdigest()!=digest[7:]:
         raise ValueError('A letöltött csomag lenyomata eltér a GitHub-kiadásétól.')
     if package_name == MSI_ASSET:

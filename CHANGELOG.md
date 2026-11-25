@@ -1,5 +1,10 @@
 # SMC Compass · verziónapló
 
+## 1.2.18 · A Windows-frissítő javítása
+
+- A Compass a GitHub-tároló állandó azonosítójáról ellenőrzi a kiadást, és annak aktuális címéről tölti le az MSI- vagy ZIP-csomagot. A tulajdonos átnevezése után is használható a programfrissítés.
+- A frissítő külön jelzi, ha a kiadáshoz még hiányzik a megfelelő Windows-csomag. A SHA-256 ellenőrzése telepítés előtt fut.
+
 ## 1.2.17 · Sugar pipeline CSV-ből
 
 - A Sugar pipeline a CRM Opportunities listájából exportált CSV-t is beolvassa. A kézi import helyi pillanatképként jelenik meg, pénznemenkénti összesítéssel.
